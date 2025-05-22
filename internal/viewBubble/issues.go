@@ -8,7 +8,6 @@ import (
 
 	"github.com/ankitpokhrel/jira-cli/api"
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
-	"github.com/ankitpokhrel/jira-cli/internal/view"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter/issue"
 	"github.com/ankitpokhrel/jira-cli/pkg/tuiBubble"
@@ -75,19 +74,6 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return iss, nil
 			}
 			return l, nil
-		case "m":
-			if l.table != nil {
-				row := l.table.GetCursorRow()
-				// tableData := l.data()
-				moveDataFn := l.table.GetMoveFunc()(row+1, 0)
-				key, actions, handler, currentStatus, refresh := moveDataFn()
-
-				if len(actions) > 0 {
-					l.table.SetMoveRequest(key, actions, handler, currentStatus, refresh)
-					l.table.ShowMoveBox(true)
-				}
-			}
-			return l, nil
 		case "c":
 			if l.table != nil {
 				row := l.table.GetCursorRow()
@@ -112,24 +98,10 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return l, nil
 		case "ctrl+r", "f5":
-			// Handle refresh
 			if l.table != nil {
-				tableData := l.data()
-				err := l.table.Paint(tableData)
-				if err != nil {
-					l.err = err
-				}
+				l.table.SetData(l.data())
 			}
 			return l, nil
-		}
-	case tuiBubble.MoveCompletedMsg:
-		// Refresh table after a move
-		if l.table != nil {
-			tableData := l.data()
-			err := l.table.Paint(tableData)
-			if err != nil {
-				l.err = err
-			}
 		}
 	}
 
@@ -169,77 +141,11 @@ func (l *IssueList) RunView() error {
 		tuiBubble.WithTableFooterText(l.FooterText),
 		tuiBubble.WithTableHelpText(tableHelpText),
 		tuiBubble.WithSelectedFunc(navigate(l.Server)),
-		tuiBubble.WithViewModeFunc(func(r, c int, data interface{}) (func() interface{}, func(interface{}) (string, error)) {
-			dataFn := func() interface{} {
-				ci := tableData.GetIndex(fieldKey)
-				iss, _ := api.ProxyGetIssue(api.DefaultClient(false), tableData.Get(r, ci), issue.NewNumCommentsFilter(1))
-				return iss
-			}
-			renderFn := func(i interface{}) (string, error) {
-				renderer, err := view.MDRenderer()
-				if err != nil {
-					return "", err
-				}
-
-				iss := view.Issue{
-					Server:  l.Server,
-					Data:    i.(*jira.Issue),
-					Options: view.IssueOption{NumComments: 1},
-				}
-				return iss.RenderedOut(renderer)
-			}
-			return dataFn, renderFn
-		}),
 		tuiBubble.WithCopyFunc(copyURL(l.Server)),
 		tuiBubble.WithCopyKeyFunc(copyKey()),
-		tuiBubble.WithMoveFunc(func(r, c int) func() (string, []string, tuiBubble.MoveHandlerFunc, string, tuiBubble.RefreshTableStateFunc) {
-			dataFn := func() (string, []string, tuiBubble.MoveHandlerFunc, string, tuiBubble.RefreshTableStateFunc) {
-				key := tableData[r][tableData.GetIndex(fieldKey)]
-				client := api.DefaultClient(false)
-				transitions, _ := api.ProxyTransitions(client, key)
-
-				var actions []string
-				for _, t := range transitions {
-					actions = append(actions, t.Name)
-				}
-
-				actionHandler := func(state string) error {
-					var tr *jira.Transition
-					for _, t := range transitions {
-						if strings.EqualFold(t.Name, state) {
-							tr = t
-							break
-						}
-					}
-					if tr == nil {
-						return fmt.Errorf("transition '%s' not found", state)
-					}
-					_, err := client.Transition(key, &jira.TransitionRequest{
-						Transition: &jira.TransitionRequestData{
-							ID:   tr.ID.String(),
-							Name: tr.Name,
-						},
-					})
-					return err
-				}
-
-				statusFieldIdx := tableData.GetIndex(fieldStatus)
-				currentStatus := tableData.Get(r, statusFieldIdx)
-
-				return key, actions, actionHandler, currentStatus, func(r, c int, val string) {
-					tableData.Update(r, statusFieldIdx, val)
-				}
-			}
-			return dataFn
-		}),
-		tuiBubble.WithFixedColumns(l.Display.FixedColumns),
 	)
 
-	// Initialize the table with data
-	err := l.table.Paint(tableData)
-	if err != nil {
-		return err
-	}
+	l.table.SetData(tableData)
 
 	// Run the program
 	if _, err := tea.NewProgram(l, tea.WithAltScreen()).Run(); err != nil {
@@ -278,9 +184,6 @@ func (l *IssueList) data() tuiBubble.TableData {
 	if !(l.Display.Plain && l.Display.NoHeaders) {
 		data = append(data, headers)
 	}
-	if len(headers) == 0 {
-		headers = validIssueColumns()
-	}
 	for _, iss := range l.Data {
 		data = append(data, l.assignColumns(headers, iss))
 	}
@@ -290,37 +193,20 @@ func (l *IssueList) data() tuiBubble.TableData {
 
 // header prepares table headers.
 func (l *IssueList) header() []string {
-	if len(l.Display.Columns) == 0 {
-		validCols := validIssueColumns()
-		if l.Display.NoTruncate || !l.Display.Plain {
-			return validCols
+	if len(l.Display.Columns) > 0 {
+		headers := []string{}
+		columnsMap := l.validColumnsMap()
+		for _, c := range l.Display.Columns {
+			c = strings.ToUpper(c)
+			if _, ok := columnsMap[c]; ok {
+				headers = append(headers, strings.ToUpper(c))
+			}
 		}
-		return validCols[0:4]
+
+		return headers
 	}
 
-	var (
-		headers   []string
-		hasKeyCol bool
-	)
-
-	columnsMap := l.validColumnsMap()
-	for _, c := range l.Display.Columns {
-		c = strings.ToUpper(c)
-		if _, ok := columnsMap[c]; ok {
-			headers = append(headers, strings.ToUpper(c))
-		}
-		if c == fieldKey {
-			hasKeyCol = true
-		}
-	}
-
-	// Key field is required in TUI to fetch relevant data later.
-	// So, we will prepend the field if it is not available.
-	if !hasKeyCol {
-		headers = append([]string{fieldKey}, headers...)
-	}
-
-	return headers
+	return validIssueColumns()
 }
 
 // validColumnsMap returns a map of valid columns.
@@ -338,15 +224,15 @@ func (*IssueList) validColumnsMap() map[string]struct{} {
 // validIssueColumns returns valid columns for issue list.
 func validIssueColumns() []string {
 	return []string{
-		fieldType,
 		fieldKey,
+		fieldType,
 		fieldSummary,
 		fieldStatus,
 		fieldAssignee,
 		fieldReporter,
-		fieldPriority,
 		fieldResolution,
 		fieldCreated,
+		fieldPriority,
 		fieldUpdated,
 		fieldLabels,
 	}
@@ -387,7 +273,7 @@ func (l *IssueList) assignColumns(columns []string, issue *jira.Issue) []string 
 }
 
 // Utility functions to support rendering
-const tableHelpText = "j/↓: Down • k/↑: Up • h/←: Left • l/→: Right • v: View • m: Move • c: Copy URL • CTRL+k: Copy Key • CTRL+r/F5: Refresh • Enter: Open in Browser • ?: Help • q/ESC/CTRL+c: Quit"
+const tableHelpText = "j/↓: Down • k/↑: Up • h/←: Left • l/→: Right • v: View • c: Copy URL • CTRL+k: Copy Key • CTRL+r/F5: Refresh • Enter: Open in Browser • ?: Help • q/ESC/CTRL+c: Quit"
 
 // navigate opens the issue in browser.
 func navigate(server string) tuiBubble.SelectedFunc {

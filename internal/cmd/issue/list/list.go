@@ -146,9 +146,6 @@ func loadList(cmd *cobra.Command, args []string) {
 		Server:  server,
 		Total:   total,
 		Data:    issues,
-		// Refresh: func() {
-		// 	loadList(cmd, args)
-		// },
 		Display: viewBubble.DisplayFormat{
 			Plain:        plain,
 			NoHeaders:    noHeaders,
@@ -160,8 +157,7 @@ func loadList(cmd *cobra.Command, args []string) {
 				}
 				return []string{}
 			}(),
-			// TableStyle: cmdutil.GetTUIStyleConfig(),
-			Timezone:   viper.GetString("timezone"),
+			Timezone: viper.GetString("timezone"),
 		},
 	}
 
