@@ -54,6 +54,9 @@ type Issue struct {
 	Options IssueOption
 
 	ListView *IssueList
+
+	width  int
+	height int
 }
 
 // RenderedOut translates raw data to the format we want to display in.
@@ -476,11 +479,20 @@ func (iss Issue) View() string {
 		panic(err)
 	}
 
+	winWidth := int(float32(iss.width) * 0.8)
+	widthMargin := int(float32(iss.width) * 0.1)
+
+	winHeight := int(float32(iss.height) * 0.8)
+	heightMargin := int(float32(iss.height) * 0.1)
+
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("62")).
 		Padding(0, 1).
-		Margin(2, 2)
+		Width(winWidth).
+		Height(winHeight).
+		Margin(heightMargin, widthMargin).
+		Align(lipgloss.Center, lipgloss.Center)
 
 	return boxStyle.Render(out)
 }

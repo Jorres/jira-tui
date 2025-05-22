@@ -59,9 +59,6 @@ type RefreshTableStateFunc func(row, col int, val string)
 // CopyFunc is fired when a user press 'c' character in the table cell.
 type CopyFunc func(row, column int, data interface{})
 
-// CopyKeyFunc is fired when a user press 'CTRL+K' character in the table cell.
-type CopyKeyFunc func(row, column int, data interface{})
-
 // Table is a bubble tea model for rendering tables.
 type Table struct {
 	table        table.Model
@@ -72,7 +69,6 @@ type Table struct {
 	selectedFunc SelectedFunc
 	refreshFunc  RefreshFunc
 	copyFunc     CopyFunc
-	copyKeyFunc  CopyKeyFunc
 	fixedColumns uint
 	showHelp     bool
 	width        int
@@ -156,13 +152,6 @@ func WithCopyFunc(fn CopyFunc) TableOption {
 	}
 }
 
-// WithCopyKeyFunc sets a func that is triggered when a user press 'CTRL+K'.
-func WithCopyKeyFunc(fn CopyKeyFunc) TableOption {
-	return func(t *Table) {
-		t.copyKeyFunc = fn
-	}
-}
-
 // WithFixedColumns sets the number of columns that are locked (do not scroll right).
 func WithFixedColumns(cols uint) TableOption {
 	return func(t *Table) {
@@ -186,7 +175,7 @@ func (t *Table) columnWidth() int {
 }
 
 // Update handles user input and updates the table model state.
-func (t *Table) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (t *Table) Update(msg tea.Msg) (*Table, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		t.width = msg.Width
@@ -204,7 +193,6 @@ func (t *Table) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Update the table model
 	var cmd tea.Cmd
 	t.table, cmd = t.table.Update(msg)
 	return t, cmd
@@ -214,34 +202,9 @@ func (t *Table) SetData(data TableData) {
 	t.tableData = data
 }
 
-// View renders the table.
-func (t *Table) View() string {
-	var s strings.Builder
-
-	data := t.tableData
-	columns := make([]table.Column, len(data[0]))
-	for i, col := range data[0] {
-		columns[i] = table.Column{
-			Title: col,
-			Width: t.columnWidth(),
-		}
-	}
-
-	rows := make([]table.Row, len(data)-1)
-	for i := 1; i < len(data); i++ {
-		row := make(table.Row, len(data[i]))
-		for j, cell := range data[i] {
-			row[j] = cell
-		}
-		rows[i-1] = row
-	}
-
-	// Create the table model with dynamic height
+func (t *Table) SetUnderlyingTable() {
 	t.table = table.New(
-		table.WithColumns(columns),
-		table.WithRows(rows),
 		table.WithFocused(true),
-		table.WithHeight(t.height-6), // Adjust for header and footer
 	)
 
 	// Set up table styles
@@ -271,6 +234,34 @@ func (t *Table) View() string {
 
 	st.Selected = st.Selected.Bold(t.style.SelectionTextIsBold)
 	t.table.SetStyles(st)
+
+}
+
+// View renders the table.
+func (t *Table) View() string {
+	var s strings.Builder
+
+	data := t.tableData
+	columns := make([]table.Column, len(data[0]))
+	for i, col := range data[0] {
+		columns[i] = table.Column{
+			Title: col,
+			Width: t.columnWidth(),
+		}
+	}
+
+	rows := make([]table.Row, len(data)-1)
+	for i := 1; i < len(data); i++ {
+		row := make(table.Row, len(data[i]))
+		for j, cell := range data[i] {
+			row[j] = cell
+		}
+		rows[i-1] = row
+	}
+
+	t.table.SetColumns(columns)
+	t.table.SetRows(rows)
+	t.table.SetHeight(t.height - 6)
 
 	// Render the table
 	tableView := t.baseStyle.Render(t.table.View())
@@ -317,9 +308,4 @@ func (t *Table) GetSelectedFunc() SelectedFunc {
 // GetCopyFunc returns the copyFunc
 func (t *Table) GetCopyFunc() CopyFunc {
 	return t.copyFunc
-}
-
-// GetCopyKeyFunc returns the copyKeyFunc
-func (t *Table) GetCopyKeyFunc() CopyKeyFunc {
-	return t.copyKeyFunc
 }

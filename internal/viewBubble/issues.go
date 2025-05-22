@@ -3,6 +3,7 @@ package viewBubble
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"text/tabwriter"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter/issue"
 	"github.com/ankitpokhrel/jira-cli/pkg/tuiBubble"
 	"github.com/atotto/clipboard"
+	"github.com/spf13/viper"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -28,15 +30,19 @@ type DisplayFormat struct {
 
 // IssueList is a list view for issues.
 type IssueList struct {
-	Total      int
-	Project    string
-	Server     string
-	Data       []*jira.Issue
-	Display    DisplayFormat
-	FooterText string
+	Total       int
+	Project     string
+	Server      string
+	Data        []*jira.Issue
+	Display     DisplayFormat
+	RefreshFunc func() ([]*jira.Issue, int)
+	FooterText  string
 
 	table *tuiBubble.Table
 	err   error
+
+	width  int
+	height int
 }
 
 // Init initializes the IssueList model.
@@ -44,82 +50,130 @@ func (l *IssueList) Init() tea.Cmd {
 	return nil
 }
 
+type editorFinishedMsg struct{ err error }
+type issueMovedMsg struct{ err error }
+
+func (l *IssueList) editIssue(issue *jira.Issue) tea.Cmd {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vim"
+	}
+
+	args := []string{}
+
+	config := viper.GetString("config")
+	if config != "" {
+		args = append(args,
+			"-c",
+			config,
+		)
+	}
+
+	args = append(args,
+		"issue",
+		"edit",
+		issue.Key,
+	)
+
+	c := exec.Command("jira", args...)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return editorFinishedMsg{err}
+	})
+}
+
+func (l *IssueList) moveIssue(issue *jira.Issue) tea.Cmd {
+	args := []string{}
+
+	config := viper.GetString("config")
+	if config != "" {
+		args = append(args,
+			"-c",
+			config,
+		)
+	}
+
+	args = append(args,
+		"issue",
+		"move",
+		issue.Key,
+	)
+
+	c := exec.Command("jira", args...)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return issueMovedMsg{err}
+	})
+}
+
+func (l *IssueList) GetSelectedIssue() *jira.Issue {
+	row := l.table.GetCursorRow()
+	tableData := l.data()
+
+	ci := tableData.GetIndex(fieldKey)
+	issData, err := api.ProxyGetIssue(api.DefaultClient(false), tableData.Get(row+1, ci), issue.NewNumCommentsFilter(10))
+	if err != nil {
+		panic(err)
+	}
+
+	return issData
+}
+
 // Update handles user input and updates the model state.
 func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		l.width = msg.Width
+		l.height = msg.Height
+	case editorFinishedMsg, issueMovedMsg:
+		l.Data, _ = l.RefreshFunc()
+		l.table.SetData(l.data())
+		return l, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q", "esc":
 			return l, tea.Quit
+		case "m":
+			return l, l.moveIssue(l.GetSelectedIssue())
 		case "v":
-			if l.table != nil {
-				row := l.table.GetCursorRow()
-				tableData := l.data()
-
-				ci := tableData.GetIndex(fieldKey)
-				issData, err := api.ProxyGetIssue(api.DefaultClient(false), tableData.Get(row+1, ci), issue.NewNumCommentsFilter(10))
-				if err != nil {
-					panic(err)
-				}
-
-				iss := Issue{
-					Server:   l.Server,
-					Data:     issData,
-					Options:  IssueOption{NumComments: 1},
-					ListView: l,
-				}
-
-				return iss, nil
+			iss := Issue{
+				Server:   l.Server,
+				Data:     l.GetSelectedIssue(),
+				Options:  IssueOption{NumComments: 1},
+				ListView: l,
+				width:    l.width,
+				height:   l.height,
 			}
-			return l, nil
+
+			return iss, nil
+		case "e":
+			return l, l.editIssue(l.GetSelectedIssue())
 		case "c":
-			if l.table != nil {
-				row := l.table.GetCursorRow()
-				tableData := l.data()
-				l.table.GetCopyFunc()(row+1, 0, tableData)
-			}
-			return l, nil
-		case "ctrl+k":
-			if l.table != nil {
-				row := l.table.GetCursorRow()
-				tableData := l.data()
-				l.table.GetCopyKeyFunc()(row+1, 0, tableData)
-			}
-			return l, nil
+			row := l.table.GetCursorRow()
+			tableData := l.data()
+			l.table.GetCopyFunc()(row+1, 0, tableData)
 		case "enter":
-			if l.table != nil {
-				row := l.table.GetCursorRow()
-				tableData := l.data()
-				if selectedFunc := l.table.GetSelectedFunc(); selectedFunc != nil {
-					selectedFunc(row+1, 0, tableData)
-				}
+			row := l.table.GetCursorRow()
+			tableData := l.data()
+			if selectedFunc := l.table.GetSelectedFunc(); selectedFunc != nil {
+				selectedFunc(row+1, 0, tableData)
 			}
 			return l, nil
 		case "ctrl+r", "f5":
-			if l.table != nil {
-				l.table.SetData(l.data())
-			}
-			return l, nil
+			l.table.SetData(l.data())
+			l.table, cmd = l.table.Update(msg)
+			return l, cmd
 		}
 	}
 
-	if l.table != nil {
-		var model tea.Model
-		model, cmd = l.table.Update(msg)
-		l.table = model.(*tuiBubble.Table)
-	}
+	l.table, cmd = l.table.Update(msg)
 
 	return l, cmd
 }
 
 // View renders the IssueList.
 func (l *IssueList) View() string {
-	if l.table != nil {
-		return l.table.View()
-	}
-	return "Loading..."
+	return l.table.View()
 }
 
 // RunView runs the view with the data.
@@ -142,8 +196,9 @@ func (l *IssueList) RunView() error {
 		tuiBubble.WithTableHelpText(tableHelpText),
 		tuiBubble.WithSelectedFunc(navigate(l.Server)),
 		tuiBubble.WithCopyFunc(copyURL(l.Server)),
-		tuiBubble.WithCopyKeyFunc(copyKey()),
 	)
+
+	l.table.SetUnderlyingTable()
 
 	l.table.SetData(tableData)
 
@@ -299,20 +354,6 @@ func copyURL(server string) tuiBubble.CopyFunc {
 		keyCol := d.GetIndex(fieldKey)
 		key := d.Get(row, keyCol)
 		copyToClipboard(fmt.Sprintf("%s/browse/%s", server, key))
-	}
-}
-
-// copyKey copies issue key to clipboard.
-func copyKey() tuiBubble.CopyKeyFunc {
-	return func(row, _ int, data interface{}) {
-		d := data.(tuiBubble.TableData)
-		if row <= 0 || row >= len(d) {
-			return
-		}
-
-		keyCol := d.GetIndex(fieldKey)
-		key := d.Get(row, keyCol)
-		copyToClipboard(key)
 	}
 }
 

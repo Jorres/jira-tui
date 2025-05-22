@@ -102,23 +102,30 @@ func loadList(cmd *cobra.Command, args []string) {
 		cmdutil.ExitIfError(cmd.Flags().Set("jql", searchQuery))
 	}
 
-	issues, total, err := func() ([]*jira.Issue, int, error) {
-		s := cmdutil.Info("Fetching issues...")
-		defer s.Stop()
+	fetchIssuesWithArgs := func() ([]*jira.Issue, int) {
+		issues, total, err := func() ([]*jira.Issue, int, error) {
+			s := cmdutil.Info("Fetching issues...")
+			defer s.Stop()
 
-		q, err := query.NewIssue(project, cmd.Flags())
-		if err != nil {
-			return nil, 0, err
-		}
+			q, err := query.NewIssue(project, cmd.Flags())
+			if err != nil {
+				return nil, 0, err
+			}
 
-		resp, err := api.ProxySearch(api.DefaultClient(debug), q.Get(), q.Params().From, q.Params().Limit)
-		if err != nil {
-			return nil, 0, err
-		}
+			resp, err := api.ProxySearch(api.DefaultClient(debug), q.Get(), q.Params().From, q.Params().Limit)
+			if err != nil {
+				return nil, 0, err
+			}
 
-		return resp.Issues, resp.Total, nil
-	}()
-	cmdutil.ExitIfError(err)
+			return resp.Issues, resp.Total, nil
+		}()
+
+		cmdutil.ExitIfError(err)
+
+		return issues, total
+	}
+
+	issues, total := fetchIssuesWithArgs()
 
 	if total == 0 {
 		fmt.Println()
@@ -142,10 +149,11 @@ func loadList(cmd *cobra.Command, args []string) {
 	cmdutil.ExitIfError(err)
 
 	v := viewBubble.IssueList{
-		Project: project,
-		Server:  server,
-		Total:   total,
-		Data:    issues,
+		Project:     project,
+		Server:      server,
+		Total:       total,
+		Data:        issues,
+		RefreshFunc: fetchIssuesWithArgs,
 		Display: viewBubble.DisplayFormat{
 			Plain:        plain,
 			NoHeaders:    noHeaders,
