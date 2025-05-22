@@ -11,6 +11,7 @@ import (
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
 	"github.com/ankitpokhrel/jira-cli/internal/query"
 	"github.com/ankitpokhrel/jira-cli/internal/view"
+	"github.com/ankitpokhrel/jira-cli/internal/viewBubble"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 )
 
@@ -140,15 +141,15 @@ func loadList(cmd *cobra.Command, args []string) {
 	columns, err := cmd.Flags().GetString("columns")
 	cmdutil.ExitIfError(err)
 
-	v := view.IssueList{
+	v := viewBubble.IssueList{
 		Project: project,
 		Server:  server,
 		Total:   total,
 		Data:    issues,
-		Refresh: func() {
-			loadList(cmd, args)
-		},
-		Display: view.DisplayFormat{
+		// Refresh: func() {
+		// 	loadList(cmd, args)
+		// },
+		Display: viewBubble.DisplayFormat{
 			Plain:        plain,
 			NoHeaders:    noHeaders,
 			NoTruncate:   noTruncate,
@@ -159,12 +160,12 @@ func loadList(cmd *cobra.Command, args []string) {
 				}
 				return []string{}
 			}(),
-			TableStyle: cmdutil.GetTUIStyleConfig(),
+			// TableStyle: cmdutil.GetTUIStyleConfig(),
 			Timezone:   viper.GetString("timezone"),
 		},
 	}
 
-	cmdutil.ExitIfError(v.Render())
+	cmdutil.ExitIfError(v.RunView())
 }
 
 // SetFlags sets flags supported by a list command.
