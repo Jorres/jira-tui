@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/viper"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // DisplayFormat is a issue display type.
@@ -43,15 +44,39 @@ type IssueList struct {
 
 	width  int
 	height int
+
+	// Split view related fields
+	showSplitView   bool
+	issueDetailView Issue
+	activeView      int
 }
 
 // Init initializes the IssueList model.
 func (l *IssueList) Init() tea.Cmd {
+	// Enable split view by default
+	l.showSplitView = true
+	l.activeView = issueListMode
+
+	// Wait for window size before loading issues
 	return nil
+}
+
+// fetchSelectedIssueCmd creates a command to fetch the currently selected issue
+func (l *IssueList) fetchSelectedIssueCmd() tea.Cmd {
+	return func() tea.Msg {
+		return selectedIssueMsg{issue: l.GetSelectedIssueShift(0)}
+	}
 }
 
 type editorFinishedMsg struct{ err error }
 type issueMovedMsg struct{ err error }
+type selectedIssueMsg struct{ issue *jira.Issue }
+
+// View mode constants
+const (
+	issueListMode int = iota
+	issueDetailMode
+)
 
 func (l *IssueList) editIssue(issue *jira.Issue) tea.Cmd {
 	editor := os.Getenv("EDITOR")
@@ -104,17 +129,37 @@ func (l *IssueList) moveIssue(issue *jira.Issue) tea.Cmd {
 	})
 }
 
-func (l *IssueList) GetSelectedIssue() *jira.Issue {
+func (l *IssueList) GetSelectedIssueShift(shift int) *jira.Issue {
 	row := l.table.GetCursorRow()
 	tableData := l.data()
+	totalIssues := len(tableData) - 1 // because of headers
+	pos := row + shift
+	if pos < 0 {
+		pos = 0
+	}
+	if pos >= totalIssues {
+		pos = totalIssues - 1
+	}
+
+	pos = pos + 1 // because of headers
 
 	ci := tableData.GetIndex(fieldKey)
-	issData, err := api.ProxyGetIssue(api.DefaultClient(false), tableData.Get(row+1, ci), issue.NewNumCommentsFilter(10))
+	// log.Fatal("pos ", pos, "key ", tableData.Get(pos, ci))
+	issData, err := api.ProxyGetIssue(api.DefaultClient(false), tableData.Get(pos, ci), issue.NewNumCommentsFilter(10))
 	if err != nil {
 		panic(err)
 	}
 
 	return issData
+}
+
+func (l *IssueList) safeIssueUpdate(msg tea.Msg) (Issue, tea.Cmd) {
+	m, cmd := l.issueDetailView.Update(msg)
+	if v, ok := m.(Issue); ok {
+		return v, cmd
+	} else {
+		panic("aaa")
+	}
 }
 
 // Update handles user input and updates the model state.
@@ -123,31 +168,97 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		// Store the full window size
 		l.width = msg.Width
 		l.height = msg.Height
+
+		// First time we get a window size, fetch the first issue
+		var fetchCmd tea.Cmd
+
+		var cmds []tea.Cmd
+
+		if l.showSplitView {
+			l.table, cmd = l.table.Update(tuiBubble.WidgetSizeMsg{
+				Height: l.height / 2,
+				Width:  l.width,
+			})
+			cmds = append(cmds, cmd)
+
+			l.issueDetailView, cmd = l.safeIssueUpdate(tuiBubble.WidgetSizeMsg{
+				Height: l.height / 2,
+				Width:  l.width,
+			})
+			cmds = append(cmds, cmd)
+		} else {
+			l.table, cmd = l.table.Update(tuiBubble.WidgetSizeMsg{
+				Height: l.height,
+				Width:  l.width,
+			})
+		}
+
+		cmds = append(cmds, fetchCmd)
+		return l, tea.Batch(cmds...)
+	case selectedIssueMsg:
+		l.issueDetailView, cmd = l.safeIssueUpdate(msg)
+		return l, cmd
 	case editorFinishedMsg, issueMovedMsg:
 		l.Data, _ = l.RefreshFunc()
 		l.table.SetData(l.data())
+		if l.showSplitView {
+			return l, l.fetchSelectedIssueCmd()
+		}
 		return l, nil
 	case tea.KeyMsg:
 		switch msg.String() {
+		case "up", "k":
+			var cmd1, cmd2 tea.Cmd
+			l.issueDetailView, cmd1 = l.safeIssueUpdate(l.GetSelectedIssueShift(-1))
+			l.table, cmd2 = l.table.Update(msg)
+			return l, tea.Batch(cmd1, cmd2)
+		case "down", "j":
+			var cmd1, cmd2 tea.Cmd
+			l.issueDetailView, cmd1 = l.safeIssueUpdate(l.GetSelectedIssueShift(+1))
+			l.table, cmd2 = l.table.Update(msg)
+			return l, tea.Batch(cmd1, cmd2)
 		case "ctrl+c", "q", "esc":
 			return l, tea.Quit
-		case "m":
-			return l, l.moveIssue(l.GetSelectedIssue())
-		case "v":
-			iss := Issue{
-				Server:   l.Server,
-				Data:     l.GetSelectedIssue(),
-				Options:  IssueOption{NumComments: 1},
-				ListView: l,
-				width:    l.width,
-				height:   l.height,
+		case "tab":
+			if l.showSplitView {
+				if l.activeView == issueListMode {
+					l.activeView = issueDetailMode
+				} else {
+					l.activeView = issueListMode
+				}
 			}
-
-			return iss, nil
+			return l, nil
+		case "m":
+			return l, l.moveIssue(l.GetSelectedIssueShift(0))
+		case "v":
+			// If we're in split view, just toggle to full-screen detail view
+			if l.showSplitView {
+				l.showSplitView = false
+				iss := Issue{
+					Server:   l.Server,
+					Data:     l.issueDetailView.Data,
+					Options:  IssueOption{NumComments: 10},
+					ListView: l,
+					width:    l.width,
+					height:   l.height,
+				}
+				return iss, nil
+			} else {
+				iss := Issue{
+					Server:   l.Server,
+					Data:     l.GetSelectedIssueShift(0),
+					Options:  IssueOption{NumComments: 10},
+					ListView: l,
+					width:    l.width,
+					height:   l.height,
+				}
+				return iss, nil
+			}
 		case "e":
-			return l, l.editIssue(l.GetSelectedIssue())
+			return l, l.editIssue(l.GetSelectedIssueShift(0))
 		case "c":
 			row := l.table.GetCursorRow()
 			tableData := l.data()
@@ -162,18 +273,78 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+r", "f5":
 			l.table.SetData(l.data())
 			l.table, cmd = l.table.Update(msg)
+			// Also refresh the selected issue if we're in split view
+			if l.showSplitView {
+				return l, l.fetchSelectedIssueCmd()
+			}
 			return l, cmd
 		}
 	}
 
-	l.table, cmd = l.table.Update(msg)
+	// If we're in issue detail mode, pass the key message to the issue detail view
+	if l.showSplitView && l.activeView == issueDetailMode {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "esc":
+				l.activeView = issueListMode
+				return l, nil
+			}
+		}
+	} else {
+		l.table, cmd = l.table.Update(msg)
+	}
 
 	return l, cmd
 }
 
 // View renders the IssueList.
 func (l *IssueList) View() string {
-	return l.table.View()
+	if !l.showSplitView {
+		return l.table.View()
+	}
+
+	// Get the raw table view
+	tableView := l.table.View()
+	detailView := l.issueDetailView.View()
+
+	// Create styles for both views to highlight the active one
+	// tableStyle := lipgloss.NewStyle().
+	// 	Border(lipgloss.RoundedBorder()).
+	// 	BorderForeground(lipgloss.Color("240")).
+	// 	Padding(0, 0). // Minimal padding
+	// 	Width(l.width - 2).
+	// 	MaxHeight(l.height/2 - 2)
+
+	// detailStyle := lipgloss.NewStyle().
+	// 	Border(lipgloss.RoundedBorder()).
+	// 	BorderForeground(lipgloss.Color("240")).
+	// 	Padding(0, 1). // A bit of horizontal padding for readability
+	// 	Width(l.width - 4).
+	// 	MaxHeight(l.height/2 - 2)
+
+	// // Highlight the active view with a different border color
+	// if l.activeView == issueListMode {
+	// 	tableStyle = tableStyle.BorderForeground(lipgloss.Color("62"))
+	// } else {
+	// 	detailStyle = detailStyle.BorderForeground(lipgloss.Color("62"))
+	// }
+
+	// // Wrap both views in their respective styles
+	// tableWrapped := tableStyle.Render(tableView)
+	// detailWrapped := detailStyle.Render(detailView)
+
+	// Add a visual separator between views
+	separator := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Render(strings.Repeat("─", l.width))
+
+	// Join everything vertically
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		tableView,
+		separator,
+		detailView,
+	)
 }
 
 // RunView runs the view with the data.
@@ -191,24 +362,47 @@ func (l *IssueList) RunView() error {
 	}
 
 	// Set up table
-	l.table = tuiBubble.NewTable(
-		tuiBubble.WithTableFooterText(l.FooterText),
-		tuiBubble.WithTableHelpText(tableHelpText),
-		tuiBubble.WithSelectedFunc(navigate(l.Server)),
-		tuiBubble.WithCopyFunc(copyURL(l.Server)),
-	)
+	l.table = l.setupTable()
 
-	l.table.SetUnderlyingTable()
+	// Enable split view by default
+	l.showSplitView = true
+	l.activeView = issueListMode
 
-	l.table.SetData(tableData)
+	if len(l.Data) == 0 {
+		panic("test data should not be 0, there should be some issues already on startup")
+	}
 
-	// Run the program
+	l.issueDetailView = Issue{
+		Server:   l.Server,
+		Data:     l.Data[0], // safe due to panic above
+		Options:  IssueOption{NumComments: 10},
+		ListView: l,
+	}
+
 	if _, err := tea.NewProgram(l, tea.WithAltScreen()).Run(); err != nil {
 		fmt.Println("Error running program:", err)
 		os.Exit(1)
 	}
 
 	return nil
+}
+
+// setupTable creates and configures the table
+func (l *IssueList) setupTable() *tuiBubble.Table {
+	// Updated help text to include tab for split view
+	splitViewHelpText := tableHelpText
+
+	table := tuiBubble.NewTable(
+		tuiBubble.WithTableFooterText(l.FooterText),
+		tuiBubble.WithTableHelpText(splitViewHelpText),
+		tuiBubble.WithSelectedFunc(navigate(l.Server)),
+		tuiBubble.WithCopyFunc(copyURL(l.Server)),
+	)
+
+	table.SetUnderlyingTable()
+	table.SetData(l.data())
+
+	return table
 }
 
 // renderPlain renders the issue in plain view.
@@ -328,7 +522,7 @@ func (l *IssueList) assignColumns(columns []string, issue *jira.Issue) []string 
 }
 
 // Utility functions to support rendering
-const tableHelpText = "j/↓: Down • k/↑: Up • h/←: Left • l/→: Right • v: View • c: Copy URL • CTRL+k: Copy Key • CTRL+r/F5: Refresh • Enter: Open in Browser • ?: Help • q/ESC/CTRL+c: Quit"
+const tableHelpText = "j/↓: Down • k/↑: Up • v: View • c: Copy URL • CTRL+r/F5: Refresh • Enter: Select/Open • Tab: Switch Focus • q/ESC/CTRL+c: Quit"
 
 // navigate opens the issue in browser.
 func navigate(server string) tuiBubble.SelectedFunc {

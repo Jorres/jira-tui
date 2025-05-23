@@ -79,13 +79,18 @@ type Table struct {
 	err          error
 }
 
+type WidgetSizeMsg struct {
+	Width  int
+	Height int
+}
+
 // TableOption is a functional option to wrap table properties.
 type TableOption func(*Table)
 
 // NewTable constructs a new table model.
 func NewTable(opts ...TableOption) *Table {
 	baseStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.NormalBorder()).
+		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("240"))
 
 	footerStyle := lipgloss.NewStyle().
@@ -164,33 +169,22 @@ func (t *Table) Init() tea.Cmd {
 	return nil
 }
 
-func (t *Table) columnWidth() int {
+func (t *Table) columnWidth() (int, int) {
 	numColumns := len(t.tableData[0])
 	availableSpace := t.width
 	colWidth := availableSpace / numColumns
 	if colWidth < 10 {
 		colWidth = 10 // Minimum column width
 	}
-	return colWidth
+	return colWidth, availableSpace - 2 - colWidth*numColumns
 }
 
 // Update handles user input and updates the table model state.
 func (t *Table) Update(msg tea.Msg) (*Table, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		t.width = msg.Width
-		t.height = msg.Height
-
-		t.table.SetHeight(t.height - 6) // Adjust for header and footer
-		t.table.SetWidth(t.width - 4)
-
-		// Recalculate column widths based on new window size
-		if len(t.tableData) > 0 {
-			cols := t.table.Columns()
-			for i := range cols {
-				cols[i].Width = t.columnWidth()
-			}
-		}
+	case WidgetSizeMsg:
+		t.width = msg.Width - 21
+		t.height = msg.Height - 1
 	}
 
 	var cmd tea.Cmd
@@ -211,7 +205,7 @@ func (t *Table) SetUnderlyingTable() {
 	st := table.DefaultStyles()
 	st.Header = st.Header.
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(lipgloss.Color(240)).
 		BorderBottom(true).
 		Bold(true).
 		Foreground(lipgloss.Color("15")).
@@ -234,7 +228,6 @@ func (t *Table) SetUnderlyingTable() {
 
 	st.Selected = st.Selected.Bold(t.style.SelectionTextIsBold)
 	t.table.SetStyles(st)
-
 }
 
 // View renders the table.
@@ -244,9 +237,13 @@ func (t *Table) View() string {
 	data := t.tableData
 	columns := make([]table.Column, len(data[0]))
 	for i, col := range data[0] {
+		oneWidth, rem := t.columnWidth()
 		columns[i] = table.Column{
 			Title: col,
-			Width: t.columnWidth(),
+			Width: oneWidth,
+		}
+		if i == len(data[0])-1 {
+			columns[i].Width += rem - 1
 		}
 	}
 
@@ -261,7 +258,7 @@ func (t *Table) View() string {
 
 	t.table.SetColumns(columns)
 	t.table.SetRows(rows)
-	t.table.SetHeight(t.height - 6)
+	t.table.SetHeight(t.height - 8)
 
 	// Render the table
 	tableView := t.baseStyle.Render(t.table.View())
@@ -274,8 +271,7 @@ func (t *Table) View() string {
 	}
 
 	// Render the help text if visible
-	if t.showHelp && t.helpText != "" {
-		s.WriteString("\n")
+	if t.helpText != "" {
 		s.WriteString(t.helpStyle.Render(t.helpText))
 	}
 

@@ -13,6 +13,7 @@ import (
 	"github.com/ankitpokhrel/jira-cli/pkg/adf"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/ankitpokhrel/jira-cli/pkg/md"
+	"github.com/ankitpokhrel/jira-cli/pkg/tuiBubble"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -458,6 +459,11 @@ func (iss Issue) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case *jira.Issue:
+		iss.Data = msg
+	case tuiBubble.WidgetSizeMsg:
+		iss.width = msg.Width
+		iss.height = msg.Height
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q", "esc":
