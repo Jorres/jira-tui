@@ -3,6 +3,7 @@ package viewBubble
 import (
 	"fmt"
 	"io"
+	"log"
 	"sort"
 	"strings"
 
@@ -18,6 +19,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+var _ = log.Fatal
 
 const defaultSummaryLength = 73 // +1 to take ellipsis '…' into account.
 
@@ -56,8 +59,23 @@ type Issue struct {
 
 	ListView *IssueList
 
-	width  int
-	height int
+	// Original window dimensions
+	RawWidth  int
+	RawHeight int
+
+	// Calculated viewport dimensions (with margins and borders)
+	viewportWidth  int
+	viewportHeight int
+
+	marginWidth  int
+	marginHeight int
+
+	contentHeight int // Content height (viewport minus border/padding)
+
+	// Scrolling state
+	firstVisibleLine int
+	renderedLines    []string
+	// headerLines      int // Number of lines before "--- Description ---"
 }
 
 // RenderedOut translates raw data to the format we want to display in.
@@ -455,27 +473,74 @@ func (iss Issue) Init() tea.Cmd {
 }
 
 // Update handles user input and updates the model state.
-func (iss Issue) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (iss *Issue) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
 	case *jira.Issue:
 		iss.Data = msg
+		// Reset scroll when new issue is loaded
+		iss.firstVisibleLine = 0
+		iss.renderedLines = nil
+		iss.calculateViewportDimensions()
 	case tuiBubble.WidgetSizeMsg:
-		iss.width = msg.Width
-		iss.height = msg.Height
+		iss.RawWidth = msg.Width
+		iss.RawHeight = msg.Height
+		iss.calculateViewportDimensions()
+		// Reset rendered lines when size changes
+		iss.renderedLines = nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q", "esc":
 			return iss.ListView, cmd
+		case "ctrl+e":
+			iss.scrollDown()
+		case "ctrl+y":
+			iss.scrollUp()
 		}
 	}
 
 	return iss, cmd
 }
 
-// View renders the IssueList.
-func (iss Issue) View() string {
+// calculateViewportDimensions calculates the actual viewport dimensions
+// accounting for margins and borders
+func (iss *Issue) calculateViewportDimensions() {
+	// Calculate viewport with 10% margins
+	iss.viewportWidth = int(float32(iss.RawWidth) * 0.8)
+	iss.viewportHeight = int(float32(iss.RawHeight) * 0.8)
+	iss.marginWidth = (iss.RawWidth - iss.viewportWidth) / 2
+	iss.marginHeight = (iss.RawHeight - iss.viewportHeight) / 2
+	// Available content height (subtract 2 for border)
+	iss.contentHeight = iss.viewportHeight - 2
+}
+
+// scrollDown scrolls the content down by one line
+func (iss *Issue) scrollDown() {
+	if iss.renderedLines == nil {
+		iss.prepareRenderedLines()
+	}
+
+	maxScroll := len(iss.renderedLines) - iss.contentHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+
+	// Only allow scrolling if it won't hide the header completely
+	if iss.firstVisibleLine < maxScroll {
+		iss.firstVisibleLine++
+	}
+}
+
+// scrollUp scrolls the content up by one line
+func (iss *Issue) scrollUp() {
+	if iss.firstVisibleLine > 0 {
+		iss.firstVisibleLine--
+	}
+}
+
+// prepareRenderedLines renders the full content and splits it into lines
+func (iss *Issue) prepareRenderedLines() {
 	r, err := MDRenderer()
 	if err != nil {
 		panic(err)
@@ -485,20 +550,82 @@ func (iss Issue) View() string {
 		panic(err)
 	}
 
-	winWidth := int(float32(iss.width) * 0.8)
-	widthMargin := int(float32(iss.width) * 0.1)
+	iss.renderedLines = strings.Split(out, "\n")
 
-	winHeight := int(float32(iss.height) * 0.8)
-	heightMargin := int(float32(iss.height) * 0.1)
+	// // Find the header boundary ("--- Description ---" line)
+	// iss.headerLines = 0
+	// for i, line := range iss.renderedLines {
+	// 	if strings.Contains(line, "Description") && (strings.Contains(line, "─") || strings.Contains(line, "---")) {
+	// 		iss.headerLines = i + 1 // Include the separator line in header
+	// 		break
+	// 	}
+	// }
+}
+
+func NewIssueFromSelected(l *IssueList, width, height int) *Issue {
+	iss := &Issue{
+		Server:    l.Server,
+		Data:      l.GetSelectedIssueShift(0),
+		Options:   IssueOption{NumComments: 10},
+		ListView:  l,
+		RawWidth:  width,
+		RawHeight: height,
+	}
+	iss.calculateViewportDimensions()
+	return iss
+}
+
+// View renders the IssueList.
+func (iss *Issue) View() string {
+	// Prepare rendered lines if not cached
+	if iss.renderedLines == nil {
+		iss.prepareRenderedLines()
+	}
+
+	if iss.contentHeight <= 0 {
+		return "Sorry, no issues yet"
+	}
+
+	// Determine what lines to show
+	var visibleLines []string
+	if len(iss.renderedLines) <= iss.contentHeight {
+		// Content fits entirely, show all
+		visibleLines = iss.renderedLines
+	} else {
+		// Content needs scrolling
+		startLine := iss.firstVisibleLine
+		endLine := startLine + iss.contentHeight
+		visibleLines = iss.renderedLines[startLine:endLine]
+
+		// // Ensure we always show the header if we're near the top
+		// if startLine < iss.headerLines {
+		// 	// We're showing some header content
+		// 	if endLine > len(iss.renderedLines) {
+		// 		endLine = len(iss.renderedLines)
+		// 	}
+		// 	visibleLines = iss.renderedLines[startLine:endLine]
+		// } else {
+		// 	// We're past the header, but make sure we don't go beyond bounds
+		// 	if endLine > len(iss.renderedLines) {
+		// 		endLine = len(iss.renderedLines)
+		// 	}
+		// 	if startLine >= len(iss.renderedLines) {
+		// 		startLine = len(iss.renderedLines) - 1
+		// 	}
+		// 	visibleLines = iss.renderedLines[startLine:endLine]
+		// }
+	}
+
+	out := strings.Join(visibleLines, "\n")
 
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("62")).
 		Padding(0, 1).
-		Width(winWidth).
-		Height(winHeight).
-		Margin(heightMargin, widthMargin).
-		Align(lipgloss.Center, lipgloss.Center)
+		Width(iss.viewportWidth).
+		Height(iss.viewportHeight).
+		Margin(iss.marginHeight, iss.marginWidth).
+		Align(lipgloss.Left, lipgloss.Top) // Change alignment to show content from top
 
 	return boxStyle.Render(out)
 }

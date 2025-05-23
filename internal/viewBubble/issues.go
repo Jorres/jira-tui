@@ -2,6 +2,7 @@ package viewBubble
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -19,6 +20,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+var _ = log.Fatal
+
 // DisplayFormat is a issue display type.
 type DisplayFormat struct {
 	Plain        bool
@@ -34,9 +37,9 @@ type IssueList struct {
 	Total       int
 	Project     string
 	Server      string
-	Data        []*jira.Issue
+	Data        map[string]*jira.Issue
 	Display     DisplayFormat
-	RefreshFunc func() ([]*jira.Issue, int)
+	RefreshFunc func() (map[string]*jira.Issue, int)
 	FooterText  string
 
 	table *tuiBubble.Table
@@ -47,7 +50,7 @@ type IssueList struct {
 
 	// Split view related fields
 	showSplitView   bool
-	issueDetailView Issue
+	issueDetailView *Issue
 	activeView      int
 }
 
@@ -144,7 +147,7 @@ func (l *IssueList) GetSelectedIssueShift(shift int) *jira.Issue {
 	pos = pos + 1 // because of headers
 
 	ci := tableData.GetIndex(fieldKey)
-	// log.Fatal("pos ", pos, "key ", tableData.Get(pos, ci))
+
 	issData, err := api.ProxyGetIssue(api.DefaultClient(false), tableData.Get(pos, ci), issue.NewNumCommentsFilter(10))
 	if err != nil {
 		panic(err)
@@ -153,9 +156,9 @@ func (l *IssueList) GetSelectedIssueShift(shift int) *jira.Issue {
 	return issData
 }
 
-func (l *IssueList) safeIssueUpdate(msg tea.Msg) (Issue, tea.Cmd) {
+func (l *IssueList) safeIssueUpdate(msg tea.Msg) (*Issue, tea.Cmd) {
 	m, cmd := l.issueDetailView.Update(msg)
-	if v, ok := m.(Issue); ok {
+	if v, ok := m.(*Issue); ok {
 		return v, cmd
 	} else {
 		panic("aaa")
@@ -178,14 +181,17 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmds []tea.Cmd
 
 		if l.showSplitView {
+			tableHeight := l.height / 2
+			previewHeight := l.height - tableHeight
+
 			l.table, cmd = l.table.Update(tuiBubble.WidgetSizeMsg{
-				Height: l.height / 2,
+				Height: tableHeight,
 				Width:  l.width,
 			})
 			cmds = append(cmds, cmd)
 
 			l.issueDetailView, cmd = l.safeIssueUpdate(tuiBubble.WidgetSizeMsg{
-				Height: l.height / 2,
+				Height: previewHeight,
 				Width:  l.width,
 			})
 			cmds = append(cmds, cmd)
@@ -194,6 +200,7 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Height: l.height,
 				Width:  l.width,
 			})
+			cmds = append(cmds, cmd)
 		}
 
 		cmds = append(cmds, fetchCmd)
@@ -237,24 +244,10 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// If we're in split view, just toggle to full-screen detail view
 			if l.showSplitView {
 				l.showSplitView = false
-				iss := Issue{
-					Server:   l.Server,
-					Data:     l.issueDetailView.Data,
-					Options:  IssueOption{NumComments: 10},
-					ListView: l,
-					width:    l.width,
-					height:   l.height,
-				}
+				iss := NewIssueFromSelected(l, l.width, l.height)
 				return iss, nil
 			} else {
-				iss := Issue{
-					Server:   l.Server,
-					Data:     l.GetSelectedIssueShift(0),
-					Options:  IssueOption{NumComments: 10},
-					ListView: l,
-					width:    l.width,
-					height:   l.height,
-				}
+				iss := NewIssueFromSelected(l, l.width, l.height)
 				return iss, nil
 			}
 		case "e":
@@ -282,19 +275,11 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// If we're in issue detail mode, pass the key message to the issue detail view
-	if l.showSplitView && l.activeView == issueDetailMode {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			switch keyMsg.String() {
-			case "esc":
-				l.activeView = issueListMode
-				return l, nil
-			}
-		}
-	} else {
-		l.table, cmd = l.table.Update(msg)
-	}
+	var cmd1, cmd2 tea.Cmd
+	l.table, cmd1 = l.table.Update(msg)
+	l.issueDetailView, cmd2 = l.safeIssueUpdate(msg)
 
-	return l, cmd
+	return l, tea.Batch(cmd1, cmd2)
 }
 
 // View renders the IssueList.
@@ -372,13 +357,7 @@ func (l *IssueList) RunView() error {
 		panic("test data should not be 0, there should be some issues already on startup")
 	}
 
-	l.issueDetailView = Issue{
-		Server:   l.Server,
-		Data:     l.Data[0], // safe due to panic above
-		Options:  IssueOption{NumComments: 10},
-		ListView: l,
-	}
-
+	l.issueDetailView = NewIssueFromSelected(l, l.width, l.height/2)
 	if _, err := tea.NewProgram(l, tea.WithAltScreen()).Run(); err != nil {
 		fmt.Println("Error running program:", err)
 		os.Exit(1)

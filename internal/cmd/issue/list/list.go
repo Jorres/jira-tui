@@ -102,8 +102,8 @@ func loadList(cmd *cobra.Command, args []string) {
 		cmdutil.ExitIfError(cmd.Flags().Set("jql", searchQuery))
 	}
 
-	fetchIssuesWithArgs := func() ([]*jira.Issue, int) {
-		issues, total, err := func() ([]*jira.Issue, int, error) {
+	fetchIssuesWithArgs := func() (map[string]*jira.Issue, int) {
+		issues, total, err := func() (map[string]*jira.Issue, int, error) {
 			s := cmdutil.Info("Fetching issues...")
 			defer s.Stop()
 
@@ -117,7 +117,13 @@ func loadList(cmd *cobra.Command, args []string) {
 				return nil, 0, err
 			}
 
-			return resp.Issues, resp.Total, nil
+			issueMap := make(map[string]*jira.Issue)
+
+			for _, iss := range resp.Issues {
+				issueMap[iss.Key] = iss
+			}
+
+			return issueMap, resp.Total, nil
 		}()
 
 		cmdutil.ExitIfError(err)

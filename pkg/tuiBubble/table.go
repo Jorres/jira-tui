@@ -2,12 +2,15 @@ package tuiBubble
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+var _ = log.Fatal
 
 // TableData is the data to be displayed in a table.
 type TableData [][]string
@@ -184,7 +187,7 @@ func (t *Table) Update(msg tea.Msg) (*Table, tea.Cmd) {
 	switch msg := msg.(type) {
 	case WidgetSizeMsg:
 		t.width = msg.Width - 21
-		t.height = msg.Height - 1
+		t.height = msg.Height - 6
 	}
 
 	var cmd tea.Cmd
@@ -271,9 +274,9 @@ func (t *Table) View() string {
 	}
 
 	// Render the help text if visible
-	if t.helpText != "" {
-		s.WriteString(t.helpStyle.Render(t.helpText))
-	}
+	// if t.helpText != "" {
+	// 	s.WriteString(t.helpStyle.Render(t.helpText))
+	// }
 
 	// Render error if there is one
 	if t.err != nil {
