@@ -102,8 +102,8 @@ func loadList(cmd *cobra.Command, args []string) {
 		cmdutil.ExitIfError(cmd.Flags().Set("jql", searchQuery))
 	}
 
-	fetchIssuesWithArgs := func() (map[string]*jira.Issue, int) {
-		issues, total, err := func() (map[string]*jira.Issue, int, error) {
+	fetchIssuesWithArgs := func() ([]*jira.Issue, int) {
+		issues, total, err := func() ([]*jira.Issue, int, error) {
 			s := cmdutil.Info("Fetching issues...")
 			defer s.Stop()
 
@@ -117,13 +117,7 @@ func loadList(cmd *cobra.Command, args []string) {
 				return nil, 0, err
 			}
 
-			issueMap := make(map[string]*jira.Issue)
-
-			for _, iss := range resp.Issues {
-				issueMap[iss.Key] = iss
-			}
-
-			return issueMap, resp.Total, nil
+			return resp.Issues, resp.Total, nil
 		}()
 
 		cmdutil.ExitIfError(err)
@@ -155,11 +149,12 @@ func loadList(cmd *cobra.Command, args []string) {
 	cmdutil.ExitIfError(err)
 
 	v := viewBubble.IssueList{
-		Project:     project,
-		Server:      server,
-		Total:       total,
-		Data:        issues,
-		RefreshFunc: fetchIssuesWithArgs,
+		Project:        project,
+		Server:         server,
+		Total:          total,
+		Data:           issues,
+		DetailedCache:  make(map[string]*jira.Issue),
+		FetchAllIssues: fetchIssuesWithArgs,
 		Display: viewBubble.DisplayFormat{
 			Plain:        plain,
 			NoHeaders:    noHeaders,

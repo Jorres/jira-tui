@@ -34,13 +34,14 @@ type DisplayFormat struct {
 
 // IssueList is a list view for issues.
 type IssueList struct {
-	Total       int
-	Project     string
-	Server      string
-	Data        map[string]*jira.Issue
-	Display     DisplayFormat
-	RefreshFunc func() (map[string]*jira.Issue, int)
-	FooterText  string
+	Total          int
+	Project        string
+	Server         string
+	Data           []*jira.Issue
+	Display        DisplayFormat
+	DetailedCache  map[string]*jira.Issue
+	FetchAllIssues func() ([]*jira.Issue, int)
+	FooterText     string
 
 	table *tuiBubble.Table
 	err   error
@@ -147,13 +148,22 @@ func (l *IssueList) GetSelectedIssueShift(shift int) *jira.Issue {
 	pos = pos + 1 // because of headers
 
 	ci := tableData.GetIndex(fieldKey)
+	key := tableData.Get(pos, ci)
 
-	issData, err := api.ProxyGetIssue(api.DefaultClient(false), tableData.Get(pos, ci), issue.NewNumCommentsFilter(10))
+	// check if in cache
+	if iss, ok := l.DetailedCache[key]; ok {
+		return iss
+	}
+
+	// fetch
+	iss, err := api.ProxyGetIssue(api.DefaultClient(false), key, issue.NewNumCommentsFilter(10))
 	if err != nil {
 		panic(err)
 	}
 
-	return issData
+	// store in cache
+	l.DetailedCache[key] = iss
+	return iss
 }
 
 func (l *IssueList) safeIssueUpdate(msg tea.Msg) (*Issue, tea.Cmd) {
@@ -161,7 +171,7 @@ func (l *IssueList) safeIssueUpdate(msg tea.Msg) (*Issue, tea.Cmd) {
 	if v, ok := m.(*Issue); ok {
 		return v, cmd
 	} else {
-		panic("aaa")
+		panic("expected *Issue from some of the issue model updates")
 	}
 }
 
@@ -209,7 +219,7 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		l.issueDetailView, cmd = l.safeIssueUpdate(msg)
 		return l, cmd
 	case editorFinishedMsg, issueMovedMsg:
-		l.Data, _ = l.RefreshFunc()
+		l.FetchAndRefreshCache()
 		l.table.SetData(l.data())
 		if l.showSplitView {
 			return l, l.fetchSelectedIssueCmd()
@@ -280,6 +290,11 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	l.issueDetailView, cmd2 = l.safeIssueUpdate(msg)
 
 	return l, tea.Batch(cmd1, cmd2)
+}
+
+func (l *IssueList) FetchAndRefreshCache() {
+	l.Data, _ = l.FetchAllIssues()
+	l.DetailedCache = make(map[string]*jira.Issue)
 }
 
 // View renders the IssueList.

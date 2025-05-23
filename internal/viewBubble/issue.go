@@ -119,6 +119,7 @@ func (i Issue) String() string {
 		s.WriteString(fmt.Sprintf("\n\n%s\n\n%s\n", i.separator("Linked Issues"), i.linkedIssues()))
 	}
 	total := i.Data.Fields.Comment.Total
+
 	if total > 0 && i.Options.NumComments > 0 {
 		sep := fmt.Sprintf("%d Comments", total)
 		s.WriteString(fmt.Sprintf("\n\n%s", i.separator(sep)))

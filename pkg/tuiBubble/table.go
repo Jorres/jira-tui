@@ -53,12 +53,6 @@ type TableStyle struct {
 // SelectedFunc is fired when a user press enter key in the table cell.
 type SelectedFunc func(row, column int, data interface{})
 
-// RefreshFunc is fired when a user press 'CTRL+R' or `F5` character in the table.
-type RefreshFunc func()
-
-// RefreshTableStateFunc is used to refresh the table state.
-type RefreshTableStateFunc func(row, col int, val string)
-
 // CopyFunc is fired when a user press 'c' character in the table cell.
 type CopyFunc func(row, column int, data interface{})
 
@@ -70,7 +64,6 @@ type Table struct {
 	footerText   string
 	helpText     string
 	selectedFunc SelectedFunc
-	refreshFunc  RefreshFunc
 	copyFunc     CopyFunc
 	fixedColumns uint
 	showHelp     bool
@@ -143,13 +136,6 @@ func WithTableHelpText(text string) TableOption {
 func WithSelectedFunc(fn SelectedFunc) TableOption {
 	return func(t *Table) {
 		t.selectedFunc = fn
-	}
-}
-
-// WithRefreshFunc sets a func that is triggered when a user press 'CTRL+R' or 'F5'.
-func WithRefreshFunc(fn RefreshFunc) TableOption {
-	return func(t *Table) {
-		t.refreshFunc = fn
 	}
 }
 
