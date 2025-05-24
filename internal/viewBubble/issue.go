@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -265,7 +266,34 @@ func (i Issue) description() string {
 		desc = md.FromJiraMD(desc)
 	}
 
+	// Apply view-only link text replacement for better readability
+	desc = replaceRedundantLinkText(desc)
+
 	return desc
+}
+
+// replaceRedundantLinkText replaces link text with "link" when text equals URL (view-only)
+// This is only for display purposes and doesn't affect the original content for editing
+func replaceRedundantLinkText(text string) string {
+	// Match full markdown links where text equals URL
+	re := regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
+
+	return re.ReplaceAllStringFunc(text, func(match string) string {
+		// Extract the link text and URL
+		submatch := re.FindStringSubmatch(match)
+		if len(submatch) == 3 {
+			linkText := submatch[1]
+			linkURL := submatch[2]
+
+			// Check if link text equals URL (duplicate case)
+			if strings.TrimSpace(linkText) == strings.TrimSpace(linkURL) {
+				// Replace with [link](URL) for cleaner display
+				return fmt.Sprintf("[link](%s)", linkURL)
+			}
+		}
+		// Otherwise return the original match
+		return match
+	})
 }
 
 func (i Issue) subtasks() string {
@@ -411,6 +439,8 @@ func (i Issue) comments() []issueComment {
 			body = c.Body.(string)
 			body = md.FromJiraMD(body)
 		}
+		// Apply view-only link text replacement for better readability
+		body = replaceRedundantLinkText(body)
 		authorName := func() string {
 			if c.Author.DisplayName != "" {
 				return c.Author.DisplayName
