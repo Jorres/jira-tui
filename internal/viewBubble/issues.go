@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"text/tabwriter"
 
 	"github.com/ankitpokhrel/jira-cli/api"
@@ -61,8 +62,13 @@ func (l *IssueList) Init() tea.Cmd {
 	l.showSplitView = true
 	l.activeView = issueListMode
 
-	// Wait for window size before loading issues
-	return nil
+	// Initialize cache if not already done
+	if l.DetailedCache == nil {
+		l.DetailedCache = make(map[string]*jira.Issue)
+	}
+
+	// Start pre-fetching first 5 issues asynchronously
+	return l.prefetchIssuesCmd()
 }
 
 // fetchSelectedIssueCmd creates a command to fetch the currently selected issue
@@ -72,9 +78,74 @@ func (l *IssueList) fetchSelectedIssueCmd() tea.Cmd {
 	}
 }
 
+// prefetchIssuesCmd creates a command to pre-fetch the first N issues
+func (l *IssueList) prefetchIssuesCmd() tea.Cmd {
+	return func() tea.Msg {
+		// Pre-fetch first N issues in the background
+		go l.prefetchTopIssues()
+		return nil
+	}
+}
+
+// prefetchTopIssues fetches the first N issues asynchronously and caches them
+func (l *IssueList) prefetchTopIssues() {
+	if len(l.Data) == 0 {
+		return
+	}
+
+	// Get prefetch count from config
+	prefetchCount := viper.GetInt("bubble.list.prefetch_from_top")
+	if prefetchCount <= 0 {
+		// If not configured or 0, disable prefetching
+		return
+	}
+
+	// Determine how many issues to prefetch (config value or total available)
+	maxPrefetch := prefetchCount
+	if len(l.Data) < maxPrefetch {
+		maxPrefetch = len(l.Data)
+	}
+
+	// Use a WaitGroup for controlled concurrency
+	var wg sync.WaitGroup
+	concurrencyLimit := 3 // Limit concurrent requests to avoid overwhelming the API
+	sem := make(chan struct{}, concurrencyLimit)
+
+	for i := 0; i < maxPrefetch; i++ {
+		iss := l.Data[i]
+		key := iss.Key
+
+		// Skip if already cached
+		if _, exists := l.DetailedCache[key]; exists {
+			continue
+		}
+
+		wg.Add(1)
+		go func(issueKey string) {
+			defer wg.Done()
+			sem <- struct{}{} // Acquire semaphore
+			defer func() { <-sem }() // Release semaphore
+
+			// Fetch detailed issue
+			detailedIssue, err := api.ProxyGetIssue(api.DefaultClient(false), issueKey, issue.NewNumCommentsFilter(10))
+			if err != nil {
+				// Log error but don't panic - just skip this issue
+				log.Printf("Failed to prefetch issue %s: %v", issueKey, err)
+				return
+			}
+
+			// Cache the detailed issue
+			l.DetailedCache[issueKey] = detailedIssue
+		}(key)
+	}
+
+	wg.Wait()
+}
+
 type editorFinishedMsg struct{ err error }
 type issueMovedMsg struct{ err error }
 type selectedIssueMsg struct{ issue *jira.Issue }
+type issueCachedMsg struct{ key string; issue *jira.Issue }
 
 // View mode constants
 const (

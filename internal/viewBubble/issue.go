@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/fatih/color"
+	"github.com/spf13/viper"
 
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
 	"github.com/ankitpokhrel/jira-cli/pkg/adf"
@@ -517,7 +518,7 @@ func (iss *Issue) calculateViewportDimensions() {
 	iss.contentHeight = iss.viewportHeight - 2
 }
 
-// scrollDown scrolls the content down by one line
+// scrollDown scrolls the content down by configured scroll size
 func (iss *Issue) scrollDown() {
 	if iss.renderedLines == nil {
 		iss.prepareRenderedLines()
@@ -528,17 +529,37 @@ func (iss *Issue) scrollDown() {
 		maxScroll = 0
 	}
 
-	// Only allow scrolling if it won't hide the header completely
-	if iss.firstVisibleLine < maxScroll {
-		iss.firstVisibleLine++
+	scrollSize := viper.GetInt("bubble.issue.scroll_size")
+	if scrollSize <= 0 {
+		scrollSize = 1 // fallback to 1 if not configured or invalid
+	}
+
+	// Calculate new scroll position
+	newScrollPos := iss.firstVisibleLine + scrollSize
+	if newScrollPos > maxScroll {
+		newScrollPos = maxScroll
+	}
+
+	// Only allow scrolling if it won't go beyond content
+	if newScrollPos > iss.firstVisibleLine {
+		iss.firstVisibleLine = newScrollPos
 	}
 }
 
-// scrollUp scrolls the content up by one line
+// scrollUp scrolls the content up by configured scroll size
 func (iss *Issue) scrollUp() {
-	if iss.firstVisibleLine > 0 {
-		iss.firstVisibleLine--
+	scrollSize := viper.GetInt("bubble.issue.scroll_size")
+	if scrollSize <= 0 {
+		scrollSize = 1 // fallback to 1 if not configured or invalid
 	}
+
+	// Calculate new scroll position
+	newScrollPos := iss.firstVisibleLine - scrollSize
+	if newScrollPos < 0 {
+		newScrollPos = 0
+	}
+
+	iss.firstVisibleLine = newScrollPos
 }
 
 // prepareRenderedLines renders the full content and splits it into lines
