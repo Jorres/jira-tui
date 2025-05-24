@@ -65,14 +65,20 @@ type Table struct {
 	helpText     string
 	selectedFunc SelectedFunc
 	copyFunc     CopyFunc
-	fixedColumns uint
 	showHelp     bool
-	width        int
-	height       int
 	baseStyle    lipgloss.Style
 	helpStyle    lipgloss.Style
 	footerStyle  lipgloss.Style
-	err          error
+
+	rawWidth       int
+	rawHeight      int
+	viewportWidth  int
+	viewportHeight int
+
+	footerHeight int
+	helpHeight   int
+
+	err error
 }
 
 type WidgetSizeMsg struct {
@@ -90,18 +96,17 @@ func NewTable(opts ...TableOption) *Table {
 		BorderForeground(lipgloss.Color("240"))
 
 	footerStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
-		Padding(0, 0, 1, 2)
+		Padding(0, 0, 1, 2).
+		Foreground(lipgloss.Color("240"))
 
 	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
-		Padding(1, 0, 0, 2)
+		Padding(1, 0, 0, 2).
+		Foreground(lipgloss.Color("240"))
 
 	t := &Table{
-		baseStyle:    baseStyle,
-		footerStyle:  footerStyle,
-		helpStyle:    helpStyle,
-		fixedColumns: 1,
+		baseStyle:   baseStyle,
+		footerStyle: footerStyle,
+		helpStyle:   helpStyle,
 	}
 
 	for _, opt := range opts {
@@ -146,13 +151,6 @@ func WithCopyFunc(fn CopyFunc) TableOption {
 	}
 }
 
-// WithFixedColumns sets the number of columns that are locked (do not scroll right).
-func WithFixedColumns(cols uint) TableOption {
-	return func(t *Table) {
-		t.fixedColumns = cols
-	}
-}
-
 // Init initializes the table model.
 func (t *Table) Init() tea.Cmd {
 	return nil
@@ -160,22 +158,33 @@ func (t *Table) Init() tea.Cmd {
 
 func (t *Table) columnWidth() (int, int) {
 	numColumns := len(t.tableData[0])
-	availableSpace := t.width
+
+	availableSpace := t.viewportWidth
+
+	availableSpace -= 2 * numColumns // this was the most difficult part. Each column is really ' ' + width + ' ', there is an implicit padding of 2 per column
+
 	colWidth := availableSpace / numColumns
 	if colWidth < 10 {
 		colWidth = 10 // Minimum column width
 	}
-	return colWidth, availableSpace - 2 - colWidth*numColumns
+
+	remainder := availableSpace - colWidth*numColumns
+	return colWidth, remainder
 }
 
 // Update handles user input and updates the table model state.
 func (t *Table) Update(msg tea.Msg) (*Table, tea.Cmd) {
 	switch msg := msg.(type) {
 	case WidgetSizeMsg:
-		t.width = msg.Width - 21
-		t.height = msg.Height - 6
-	}
+		t.rawWidth = msg.Width
+		t.rawHeight = msg.Height
 
+		t.footerHeight = 4
+		t.helpHeight = 4
+
+		t.viewportWidth = msg.Width - 2 // table external border
+		t.viewportHeight = msg.Height - t.footerHeight - t.helpHeight
+	}
 	var cmd tea.Cmd
 	t.table, cmd = t.table.Update(msg)
 	return t, cmd
@@ -232,7 +241,7 @@ func (t *Table) View() string {
 			Width: oneWidth,
 		}
 		if i == len(data[0])-1 {
-			columns[i].Width += rem - 1
+			columns[i].Width = oneWidth + rem
 		}
 	}
 
@@ -247,7 +256,8 @@ func (t *Table) View() string {
 
 	t.table.SetColumns(columns)
 	t.table.SetRows(rows)
-	t.table.SetHeight(t.height - 8)
+	t.table.SetHeight(t.viewportHeight)
+	t.table.SetWidth(t.viewportWidth)
 
 	// Render the table
 	tableView := t.baseStyle.Render(t.table.View())
@@ -260,9 +270,9 @@ func (t *Table) View() string {
 	}
 
 	// Render the help text if visible
-	// if t.helpText != "" {
-	// 	s.WriteString(t.helpStyle.Render(t.helpText))
-	// }
+	if t.helpText != "" {
+		s.WriteString(t.helpStyle.Render(t.helpText))
+	}
 
 	// Render error if there is one
 	if t.err != nil {
