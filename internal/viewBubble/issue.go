@@ -508,8 +508,9 @@ func (iss *Issue) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // accounting for margins and borders
 func (iss *Issue) calculateViewportDimensions() {
 	// Calculate viewport with 10% margins
-	iss.viewportWidth = int(float32(iss.RawWidth) * 0.8)
-	iss.viewportHeight = int(float32(iss.RawHeight) * 0.8)
+	iss.viewportWidth = int(float32(iss.RawWidth) * 0.9)
+	// iss.viewportHeight = int(float32(iss.RawHeight) * 0.9)
+	iss.viewportHeight = iss.RawHeight - 2
 	iss.marginWidth = (iss.RawWidth - iss.viewportWidth) / 2
 	iss.marginHeight = (iss.RawHeight - iss.viewportHeight) / 2
 	// Available content height (subtract 2 for border)
@@ -622,11 +623,10 @@ func (iss *Issue) View() string {
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("62")).
-		Padding(0, 1).
 		Width(iss.viewportWidth).
 		Height(iss.viewportHeight).
 		Margin(iss.marginHeight, iss.marginWidth).
-		Align(lipgloss.Left, lipgloss.Top) // Change alignment to show content from top
+		Align(lipgloss.Center, lipgloss.Top) // Change alignment to show content from top
 
 	return boxStyle.Render(out)
 }

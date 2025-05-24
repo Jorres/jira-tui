@@ -191,7 +191,7 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmds []tea.Cmd
 
 		if l.showSplitView {
-			tableHeight := l.height / 2
+			tableHeight := int(0.4 * float32(l.height))
 			previewHeight := l.height - tableHeight
 
 			l.table, cmd = l.table.Update(tuiBubble.WidgetSizeMsg{
