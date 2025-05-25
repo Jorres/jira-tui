@@ -2,6 +2,7 @@ package list
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -11,10 +12,12 @@ import (
 	"github.com/ankitpokhrel/jira-cli/internal/cmd/issue/list"
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
 	"github.com/ankitpokhrel/jira-cli/internal/query"
-	"github.com/ankitpokhrel/jira-cli/internal/view"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
-	"github.com/ankitpokhrel/jira-cli/pkg/tui"
+
+	"github.com/ankitpokhrel/jira-cli/internal/viewBubble"
 )
+
+var _ = log.Fatal
 
 const (
 	helpText = `List lists top 100 epics.
@@ -83,41 +86,25 @@ func epicList(cmd *cobra.Command, args []string) {
 		epicExplorerView(cmd, cmd.Flags(), project, projectType, server, client)
 	} else {
 		key := cmdutil.GetJiraIssueKey(project, args[0])
-		singleEpicView(cmd.Flags(), key, project, projectType, server, client)
+		singleEpicView(cmd, cmd.Flags(), key, project, projectType, server, client)
 	}
 }
 
-func singleEpicView(flags query.FlagParser, key, project, projectType, server string, client *jira.Client) {
+func singleEpicView(cmd *cobra.Command, flags query.FlagParser, key, project, projectType, server string, client *jira.Client) {
 	err := flags.Set("type", "") // Unset issue type.
 	cmdutil.ExitIfError(err)
-
-	issues, total, err := func() ([]*jira.Issue, int, error) {
-		s := cmdutil.Info("Fetching epic issues...")
-		defer s.Stop()
-
-		q, err := query.NewIssue(project, flags)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		var resp *jira.SearchResult
-
-		if projectType == jira.ProjectTypeNextGen {
-			q.Params().Parent = key
-			q.Params().IssueType = ""
-
-			resp, err = client.Search(q.Get(), q.Params().From, q.Params().Limit)
-		} else {
-			resp, err = client.EpicIssues(key, q.Get(), q.Params().From, q.Params().Limit)
-		}
-
-		if err != nil {
-			return nil, 0, err
-		}
-		return resp.Issues, resp.Total, nil
-	}()
+	debug, err := cmd.Flags().GetBool("debug")
 	cmdutil.ExitIfError(err)
 
+	q, err := query.NewIssue(project, flags)
+	cmdutil.ExitIfError(err)
+	if projectType == jira.ProjectTypeNextGen {
+		q.Params().IssueType = ""
+	}
+	q.Params().Parent = key
+	fetchAllIssuesOfEpic := list.MakeFetcherFromQuery(q, debug)
+
+	issues, total := fetchAllIssuesOfEpic()
 	if total == 0 {
 		fmt.Println()
 		cmdutil.Failed("No result found for given query in project %q", project)
@@ -139,15 +126,14 @@ func singleEpicView(flags query.FlagParser, key, project, projectType, server st
 	columns, err := flags.GetString("columns")
 	cmdutil.ExitIfError(err)
 
-	v := view.IssueList{
-		Project: project,
-		Server:  server,
-		Total:   total,
-		Data:    issues,
-		Refresh: func() {
-			singleEpicView(flags, key, project, projectType, server, client)
-		},
-		Display: view.DisplayFormat{
+	v := viewBubble.IssueList{
+		Project:        project,
+		Server:         server,
+		Total:          total,
+		Data:           issues,
+		FetchAllIssues: fetchAllIssuesOfEpic,
+		DetailedCache:  make(map[string]*jira.Issue),
+		Display: viewBubble.DisplayFormat{
 			Plain:        plain,
 			NoHeaders:    noHeaders,
 			NoTruncate:   noTruncate,
@@ -158,75 +144,64 @@ func singleEpicView(flags query.FlagParser, key, project, projectType, server st
 				}
 				return []string{}
 			}(),
-			TableStyle: cmdutil.GetTUIStyleConfig(),
-			Timezone:   viper.GetString("timezone"),
+			Timezone: viper.GetString("timezone"),
 		},
 	}
 
-	cmdutil.ExitIfError(v.Render())
+	cmdutil.ExitIfError(v.RunView())
 }
 
 func epicExplorerView(cmd *cobra.Command, flags query.FlagParser, project, projectType, server string, client *jira.Client) {
+	debug, err := cmd.Flags().GetBool("debug")
+	cmdutil.ExitIfError(err)
+
 	q, err := query.NewIssue(project, flags)
 	cmdutil.ExitIfError(err)
+	if projectType == jira.ProjectTypeNextGen {
+		q.Params().IssueType = viper.GetString("next_gen.epic_task_name")
+	}
+	fetchAllEpics := list.MakeFetcherFromQuery(q, debug)
+	if err != nil {
+		cmdutil.ExitIfError(err)
+	}
 
-	epics, total, err := func() ([]*jira.Issue, int, error) {
-		s := cmdutil.Info("Fetching epics...")
-		defer s.Stop()
-
-		resp, err := api.ProxySearch(client, q.Get(), q.Params().From, q.Params().Limit)
-		if err != nil {
-			return nil, 0, err
-		}
-		return resp.Issues, resp.Total, nil
-	}()
-	cmdutil.ExitIfError(err)
-
+	epics, total := fetchAllEpics()
 	if total == 0 {
 		fmt.Println()
-		cmdutil.Failed("No result found for given query in project %q", project)
 		return
 	}
 
 	fixedColumns, err := flags.GetUint("fixed-columns")
 	cmdutil.ExitIfError(err)
 
-	v := view.EpicList{
-		Total:   total,
-		Project: project,
-		Server:  server,
-		Data:    epics,
-		Issues: func(key string) []*jira.Issue {
-			var resp *jira.SearchResult
+	plain, err := flags.GetBool("plain")
+	cmdutil.ExitIfError(err)
 
-			if projectType == jira.ProjectTypeNextGen {
-				q.Params().Parent = key
-				q.Params().IssueType = ""
+	noHeaders, err := flags.GetBool("no-headers")
+	cmdutil.ExitIfError(err)
 
-				resp, err = client.Search(q.Get(), q.Params().From, q.Params().Limit)
-			} else {
-				resp, err = client.EpicIssues(key, "", q.Params().From, q.Params().Limit)
-			}
-			if err != nil {
-				return []*jira.Issue{}
-			}
-			return resp.Issues
-		},
-		Display: view.DisplayFormat{
+	noTruncate, err := flags.GetBool("no-truncate")
+	cmdutil.ExitIfError(err)
+
+	if err != nil {
+		cmdutil.ExitIfError(err)
+	}
+	v := viewBubble.IssueList{
+		Total:          total,
+		Project:        project,
+		Server:         server,
+		Data:           epics,
+		FetchAllIssues: fetchAllEpics,
+		DetailedCache:  make(map[string]*jira.Issue),
+		Display: viewBubble.DisplayFormat{
+			Plain:        plain,
+			NoHeaders:    noHeaders,
+			NoTruncate:   noTruncate,
 			FixedColumns: fixedColumns,
-			TableStyle:   cmdutil.GetTUIStyleConfig(),
 			Timezone:     viper.GetString("timezone"),
 		},
 	}
-
-	table, err := flags.GetBool("table")
-	cmdutil.ExitIfError(err)
-
-	if table || tui.IsDumbTerminal() || tui.IsNotTTY() {
-		list.List(cmd, nil)
-	} else {
-		cmdutil.ExitIfError(v.Render())
-	}
+	cmdutil.ExitIfError(v.RunView())
 }
 
 func setFlags(cmd *cobra.Command) {

@@ -4,6 +4,7 @@ const (
 	fieldID           = "ID"
 	fieldName         = "NAME"
 	fieldType         = "TYPE"
+	fieldParent       = "PARENT"
 	fieldKey          = "KEY"
 	fieldSummary      = "SUMMARY"
 	fieldStatus       = "STATUS"

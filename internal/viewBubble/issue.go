@@ -649,24 +649,6 @@ func (iss *Issue) View() string {
 		startLine := iss.firstVisibleLine
 		endLine := startLine + iss.contentHeight
 		visibleLines = iss.renderedLines[startLine:endLine]
-
-		// // Ensure we always show the header if we're near the top
-		// if startLine < iss.headerLines {
-		// 	// We're showing some header content
-		// 	if endLine > len(iss.renderedLines) {
-		// 		endLine = len(iss.renderedLines)
-		// 	}
-		// 	visibleLines = iss.renderedLines[startLine:endLine]
-		// } else {
-		// 	// We're past the header, but make sure we don't go beyond bounds
-		// 	if endLine > len(iss.renderedLines) {
-		// 		endLine = len(iss.renderedLines)
-		// 	}
-		// 	if startLine >= len(iss.renderedLines) {
-		// 		startLine = len(iss.renderedLines) - 1
-		// 	}
-		// 	visibleLines = iss.renderedLines[startLine:endLine]
-		// }
 	}
 
 	out := strings.Join(visibleLines, "\n")

@@ -751,6 +751,8 @@ func (c *JiraCLIConfigGenerator) write(path string) (string, error) {
 		config.Set("insecure", c.usrCfg.Insecure)
 	}
 
+	config.SetDefault("next_gen.epic_task_name", "Epic")
+
 	config.Set("installation", c.value.installation)
 	config.Set("server", c.value.server)
 	config.Set("login", c.value.login)

@@ -2,6 +2,7 @@ package jira
 
 import (
 	"encoding/json"
+	"fmt"
 )
 
 const (
@@ -54,6 +55,11 @@ type Issue struct {
 	Key    string      `json:"key"`
 	Fields IssueFields `json:"fields"`
 }
+
+// This allows for `Issue` type to be passed to FuzzySelector
+func (i Issue) FilterValue() string { return fmt.Sprintf("%s %s", i.Key, i.Fields.Summary) }
+func (i Issue) Description() string { return i.Fields.Summary }
+func (i Issue) Title() string       { return i.Key }
 
 // IssueFields holds issue fields.
 type IssueFields struct {

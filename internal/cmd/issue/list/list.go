@@ -2,6 +2,7 @@ package list
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -14,6 +15,8 @@ import (
 	"github.com/ankitpokhrel/jira-cli/internal/viewBubble"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 )
+
+var _ = log.Fatal
 
 const (
 	helpText = `List lists issues in a given project.
@@ -78,6 +81,41 @@ func List(cmd *cobra.Command, args []string) {
 	loadList(cmd, args)
 }
 
+func MakeFetcherFromQuery(q *query.Issue, debug bool) func() ([]*jira.Issue, int) {
+	return func() ([]*jira.Issue, int) {
+		issues, total, err := func() ([]*jira.Issue, int, error) {
+			s := cmdutil.Info("Fetching issues...")
+			defer s.Stop()
+
+			if debug {
+				log.Fatal(fmt.Sprintf("%+v\n", q.Params()))
+			}
+			resp, err := api.ProxySearch(api.DefaultClient(debug), q.Get(), q.Params().From, q.Params().Limit)
+			if err != nil {
+				return nil, 0, err
+			}
+
+			// TODO @jorres we lost an ability to query epics here, see `epic list` command, it would fail in case of non-next-gen project
+
+			// 	var resp *jira.SearchResult
+			// 	if projectType == jira.ProjectTypeNextGen {
+			// 		q.Params().Parent = key
+			// 		q.Params().IssueType = viper.GetString("next_gen.epic_task_name")
+
+			// 		resp, err = client.Search(q.Get(), q.Params().From, q.Params().Limit)
+			// 	} else {
+			// 		resp, err = client.EpicIssues(key, q.Get(), q.Params().From, q.Params().Limit)
+			// 	}
+
+			return resp.Issues, resp.Total, nil
+		}()
+
+		cmdutil.ExitIfError(err)
+
+		return issues, total
+	}
+}
+
 func loadList(cmd *cobra.Command, args []string) {
 	server := viper.GetString("server")
 	project := viper.GetString("project.key")
@@ -102,28 +140,11 @@ func loadList(cmd *cobra.Command, args []string) {
 		cmdutil.ExitIfError(cmd.Flags().Set("jql", searchQuery))
 	}
 
-	fetchIssuesWithArgs := func() ([]*jira.Issue, int) {
-		issues, total, err := func() ([]*jira.Issue, int, error) {
-			s := cmdutil.Info("Fetching issues...")
-			defer s.Stop()
-
-			q, err := query.NewIssue(project, cmd.Flags())
-			if err != nil {
-				return nil, 0, err
-			}
-
-			resp, err := api.ProxySearch(api.DefaultClient(debug), q.Get(), q.Params().From, q.Params().Limit)
-			if err != nil {
-				return nil, 0, err
-			}
-
-			return resp.Issues, resp.Total, nil
-		}()
-
+	q, err := query.NewIssue(project, cmd.Flags())
+	if err != nil {
 		cmdutil.ExitIfError(err)
-
-		return issues, total
 	}
+	fetchIssuesWithArgs := MakeFetcherFromQuery(q, debug)
 
 	issues, total := fetchIssuesWithArgs()
 
@@ -148,6 +169,15 @@ func loadList(cmd *cobra.Command, args []string) {
 	columns, err := cmd.Flags().GetString("columns")
 	cmdutil.ExitIfError(err)
 
+	projectType := viper.GetString("project.type")
+	epicQ, err := query.NewIssue(project, cmd.Flags())
+	if projectType == jira.ProjectTypeNextGen {
+		epicQ.Params().IssueType = viper.GetString("next_gen.epic_task_name")
+	}
+	epicQ.Params().Status = []string{}
+	epicQ.Params().Assignee = ""
+	fetchAllEpics := MakeFetcherFromQuery(epicQ, debug)
+
 	v := viewBubble.IssueList{
 		Project:        project,
 		Server:         server,
@@ -155,6 +185,7 @@ func loadList(cmd *cobra.Command, args []string) {
 		Data:           issues,
 		DetailedCache:  make(map[string]*jira.Issue),
 		FetchAllIssues: fetchIssuesWithArgs,
+		FetchAllEpics:  fetchAllEpics,
 		Display: viewBubble.DisplayFormat{
 			Plain:        plain,
 			NoHeaders:    noHeaders,

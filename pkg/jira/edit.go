@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -127,8 +128,9 @@ func (cfm *editFieldsMarshaler) MarshalJSON() ([]byte, error) {
 	if len(cfm.M.Summary) == 0 || cfm.M.Summary[0].Set == "" {
 		cfm.M.Summary = nil
 	}
-	if len(cfm.M.Description) == 0 || cfm.M.Description[0].Set == nil {
+	if len(cfm.M.Description) == 0 || cfm.M.Description[0].Set == nil || cfm.M.Description[0].Set == "" {
 		cfm.M.Description = nil
+	} else {
 	}
 	if len(cfm.M.Priority) == 0 || cfm.M.Priority[0].Set.Name == "" {
 		cfm.M.Priority = nil
@@ -185,13 +187,17 @@ func getRequestDataForEdit(req *EditRequest) *editRequest {
 		descriptionContent = req.Body
 	}
 
+	log.Printf("%v\n", descriptionContent)
+
 	update := editFieldsMarshaler{editFields{
 		Summary: []struct {
 			Set string `json:"set,omitempty"`
 		}{{Set: req.Summary}},
+
 		Description: []struct {
 			Set interface{} `json:"set,omitempty"`
 		}{{Set: descriptionContent}},
+
 		Priority: []struct {
 			Set struct {
 				Name string `json:"name,omitempty"`

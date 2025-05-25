@@ -18,6 +18,7 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/spf13/viper"
 
+	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -43,6 +44,7 @@ type IssueList struct {
 	Display        DisplayFormat
 	DetailedCache  map[string]*jira.Issue
 	FetchAllIssues func() ([]*jira.Issue, int)
+	FetchAllEpics  func() ([]*jira.Issue, int)
 	FooterText     string
 
 	table *tuiBubble.Table
@@ -50,6 +52,8 @@ type IssueList struct {
 
 	width  int
 	height int
+
+	fuzzy *FuzzySelector
 
 	// Split view related fields
 	showSplitView   bool
@@ -80,6 +84,10 @@ func (l *IssueList) setStatusMessage(message string) tea.Cmd {
 	})
 }
 
+type fuzzySelectorResult struct {
+	item list.Item
+}
+
 // Init initializes the IssueList model.
 func (l *IssueList) Init() tea.Cmd {
 	// Enable split view by default
@@ -90,7 +98,6 @@ func (l *IssueList) Init() tea.Cmd {
 		l.DetailedCache = make(map[string]*jira.Issue)
 	}
 
-	// Start pre-fetching first 5 issues asynchronously
 	return l.prefetchIssuesCmd()
 }
 
@@ -167,6 +174,7 @@ func (l *IssueList) prefetchTopIssues() {
 
 type editorFinishedMsg struct{ err error }
 type issueMovedMsg struct{ err error }
+type issueAssignedToEpic struct{ err error }
 type selectedIssueMsg struct{ issue *jira.Issue }
 type issueCachedMsg struct {
 	key   string
@@ -227,6 +235,30 @@ func (l *IssueList) moveIssue(issue *jira.Issue) tea.Cmd {
 	c := exec.Command("jira", args...)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return issueMovedMsg{err}
+	})
+}
+
+func (l *IssueList) assignToEpic(epicKey string, issue *jira.Issue) tea.Cmd {
+	args := []string{}
+
+	config := viper.GetString("config")
+	if config != "" {
+		args = append(args,
+			"-c",
+			config,
+		)
+	}
+
+	args = append(args,
+		"epic",
+		"add",
+		epicKey,
+		issue.Key,
+	)
+
+	c := exec.Command("jira", args...)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return issueAssignedToEpic{err}
 	})
 }
 
@@ -315,7 +347,7 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case selectedIssueMsg:
 		l.issueDetailView, cmd = l.safeIssueUpdate(msg)
 		return l, cmd
-	case editorFinishedMsg, issueMovedMsg:
+	case editorFinishedMsg, issueMovedMsg, issueAssignedToEpic:
 		l.FetchAndRefreshCache()
 		l.table.SetData(l.data())
 		if l.showSplitView {
@@ -329,6 +361,12 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			l.statusTimer = nil
 		}
 		return l, nil
+	case fuzzySelectorResult:
+		switch item := msg.item.(type) {
+		case *jira.Issue:
+			epic := item
+			return l, l.assignToEpic(epic.Key, l.GetSelectedIssueShift(0))
+		}
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "up", "k":
@@ -341,6 +379,15 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			l.issueDetailView, cmd1 = l.safeIssueUpdate(l.GetSelectedIssueShift(+1))
 			l.table, cmd2 = l.table.Update(msg)
 			return l, tea.Batch(cmd1, cmd2)
+		case "ctrl+e":
+			// I hate golang, why tf []concrete -> []interface is invalid when concrete satisfies interface...
+			epics, _ := l.FetchAllEpics()
+			listItems := []list.Item{}
+			for _, epic := range epics {
+				listItems = append(listItems, epic)
+			}
+			fz := NewFuzzySelectorFrom(l, l.width, l.height, listItems)
+			return fz, nil
 		case "ctrl+c", "q", "esc":
 			return l, tea.Quit
 		case "m":
@@ -561,6 +608,7 @@ func validIssueColumns() []string {
 	return []string{
 		fieldKey,
 		fieldType,
+		fieldParent,
 		fieldSummary,
 		fieldStatus,
 		fieldAssignee,
@@ -583,6 +631,12 @@ func (l *IssueList) assignColumns(columns []string, issue *jira.Issue) []string 
 			bucket = append(bucket, issue.Fields.IssueType.Name)
 		case fieldKey:
 			bucket = append(bucket, issue.Key)
+		case fieldParent:
+			if issue.Fields.Parent != nil {
+				bucket = append(bucket, issue.Fields.Parent.Key)
+			} else {
+				bucket = append(bucket, "")
+			}
 		case fieldSummary:
 			bucket = append(bucket, prepareTitle(issue.Fields.Summary))
 		case fieldStatus:
@@ -608,7 +662,7 @@ func (l *IssueList) assignColumns(columns []string, issue *jira.Issue) []string 
 }
 
 // Utility functions to support rendering
-const tableHelpText = "j/↓: Down • k/↑: Up • v: View • c: Copy URL • CTRL+r/F5: Refresh • Enter: Select/Open • Tab: Switch Focus • q/ESC/CTRL+c: Quit"
+const tableHelpText = "j/↓: Down • k/↑: Up • v: View • c: Copy URL • CTRL+r/F5: Refresh • CTRL+e: Assign to epic • Enter: Select/Open • q/ESC/CTRL+c: Quit"
 
 // navigate opens the issue in browser.
 func navigate(server string) tuiBubble.SelectedFunc {
