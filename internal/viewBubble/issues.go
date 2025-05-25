@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"text/tabwriter"
+	"time"
 
 	"github.com/ankitpokhrel/jira-cli/api"
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
@@ -53,14 +54,36 @@ type IssueList struct {
 	// Split view related fields
 	showSplitView   bool
 	issueDetailView *Issue
-	activeView      int
+
+	// Status message fields
+	statusMessage string
+	statusTimer   *time.Timer
+}
+
+// statusClearMsg is sent when the status message should be cleared
+type statusClearMsg struct{}
+
+// setStatusMessage sets a temporary status message that will be cleared after 1 second
+func (l *IssueList) setStatusMessage(message string) tea.Cmd {
+	l.statusMessage = message
+
+	// Clear any existing timer
+	if l.statusTimer != nil {
+		l.statusTimer.Stop()
+	}
+
+	// Set a new timer to clear the message after 1 second
+	l.statusTimer = time.NewTimer(time.Second)
+
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return statusClearMsg{}
+	})
 }
 
 // Init initializes the IssueList model.
 func (l *IssueList) Init() tea.Cmd {
 	// Enable split view by default
 	l.showSplitView = true
-	l.activeView = issueListMode
 
 	// Initialize cache if not already done
 	if l.DetailedCache == nil {
@@ -123,7 +146,7 @@ func (l *IssueList) prefetchTopIssues() {
 		wg.Add(1)
 		go func(issueKey string) {
 			defer wg.Done()
-			sem <- struct{}{} // Acquire semaphore
+			sem <- struct{}{}        // Acquire semaphore
 			defer func() { <-sem }() // Release semaphore
 
 			// Fetch detailed issue
@@ -145,7 +168,10 @@ func (l *IssueList) prefetchTopIssues() {
 type editorFinishedMsg struct{ err error }
 type issueMovedMsg struct{ err error }
 type selectedIssueMsg struct{ issue *jira.Issue }
-type issueCachedMsg struct{ key string; issue *jira.Issue }
+type issueCachedMsg struct {
+	key   string
+	issue *jira.Issue
+}
 
 // View mode constants
 const (
@@ -296,6 +322,13 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return l, l.fetchSelectedIssueCmd()
 		}
 		return l, nil
+	case statusClearMsg:
+		l.statusMessage = ""
+		if l.statusTimer != nil {
+			l.statusTimer.Stop()
+			l.statusTimer = nil
+		}
+		return l, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "up", "k":
@@ -310,15 +343,6 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return l, tea.Batch(cmd1, cmd2)
 		case "ctrl+c", "q", "esc":
 			return l, tea.Quit
-		case "tab":
-			if l.showSplitView {
-				if l.activeView == issueListMode {
-					l.activeView = issueDetailMode
-				} else {
-					l.activeView = issueListMode
-				}
-			}
-			return l, nil
 		case "m":
 			return l, l.moveIssue(l.GetSelectedIssueShift(0))
 		case "v":
@@ -334,9 +358,21 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "e":
 			return l, l.editIssue(l.GetSelectedIssueShift(0))
 		case "c":
+			// Copy URL and show confirmation
 			row := l.table.GetCursorRow()
 			tableData := l.data()
-			l.table.GetCopyFunc()(row+1, 0, tableData)
+
+			// Get the issue key to build the URL
+			if row >= 0 && row+1 < len(tableData) {
+				keyCol := tableData.GetIndex("KEY")
+				if keyCol >= 0 {
+					key := tableData.Get(row+1, keyCol)
+					url := fmt.Sprintf("%s/browse/%s", l.Server, key)
+					copyToClipboard(url)
+					return l, l.setStatusMessage(fmt.Sprintf("Current issue FQDN copied: %s", url))
+				}
+			}
+			return l, nil
 		case "enter":
 			row := l.table.GetCursorRow()
 			tableData := l.data()
@@ -370,6 +406,18 @@ func (l *IssueList) FetchAndRefreshCache() {
 
 // View renders the IssueList.
 func (l *IssueList) View() string {
+	// Update footer text based on status message
+	if l.statusMessage != "" {
+		l.table.SetFooterText(l.statusMessage)
+	} else {
+		// Use the default footer text
+		if l.FooterText == "" {
+			tableData := l.data()
+			l.FooterText = fmt.Sprintf("Showing %d of %d results for project %q", len(tableData)-1, l.Total, l.Project)
+		}
+		l.table.SetFooterText(l.FooterText)
+	}
+
 	if !l.showSplitView {
 		return l.table.View()
 	}
@@ -377,32 +425,6 @@ func (l *IssueList) View() string {
 	// Get the raw table view
 	tableView := l.table.View()
 	detailView := l.issueDetailView.View()
-
-	// Create styles for both views to highlight the active one
-	// tableStyle := lipgloss.NewStyle().
-	// 	Border(lipgloss.RoundedBorder()).
-	// 	BorderForeground(lipgloss.Color("240")).
-	// 	Padding(0, 0). // Minimal padding
-	// 	Width(l.width - 2).
-	// 	MaxHeight(l.height/2 - 2)
-
-	// detailStyle := lipgloss.NewStyle().
-	// 	Border(lipgloss.RoundedBorder()).
-	// 	BorderForeground(lipgloss.Color("240")).
-	// 	Padding(0, 1). // A bit of horizontal padding for readability
-	// 	Width(l.width - 4).
-	// 	MaxHeight(l.height/2 - 2)
-
-	// // Highlight the active view with a different border color
-	// if l.activeView == issueListMode {
-	// 	tableStyle = tableStyle.BorderForeground(lipgloss.Color("62"))
-	// } else {
-	// 	detailStyle = detailStyle.BorderForeground(lipgloss.Color("62"))
-	// }
-
-	// // Wrap both views in their respective styles
-	// tableWrapped := tableStyle.Render(tableView)
-	// detailWrapped := detailStyle.Render(detailView)
 
 	// Add a visual separator between views
 	separator := lipgloss.NewStyle().
@@ -437,7 +459,6 @@ func (l *IssueList) RunView() error {
 
 	// Enable split view by default
 	l.showSplitView = true
-	l.activeView = issueListMode
 
 	if len(l.Data) == 0 {
 		panic("test data should not be 0, there should be some issues already on startup")

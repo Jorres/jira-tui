@@ -559,23 +559,15 @@ func resolveUserIDToEmail(userID string, client *jira.Client, project string) st
 
 	if err != nil {
 		log.Printf("DEBUG: Failed to search for user %s: %v", userID, err)
-		fmt.Fprintf(os.Stderr, "Warning: Failed to resolve user ID %s: %v\n", userID, err)
 		return ""
 	}
 
-	log.Printf("DEBUG: Found %v user for ID %s", user, userID)
-
-	log.Printf("DEBUG: First user: Email=%s, Name=%s, DisplayName=%s, AccountID=%s",
-		user.Email, user.Name, user.DisplayName, user.AccountID)
-
 	// Check if we have an email field
 	if user.Email != "" {
-		log.Printf("DEBUG: Using email field: %s", user.Email)
 		return user.Email
 	}
 	// Some installations might use different field names
 	if user.Name != "" && strings.Contains(user.Name, "@") {
-		log.Printf("DEBUG: Using name field as email: %s", user.Name)
 		return user.Name
 	}
 

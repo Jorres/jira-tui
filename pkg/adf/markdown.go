@@ -288,9 +288,6 @@ func (tr *MarkdownTranslator) setOpenTagAttributesForMention(a interface{}) stri
 	// For mentions, we want to render as @email instead of @displayName
 	if userID, ok := attrs["id"]; ok {
 		if email := tr.resolveUserEmail(userID.(string)); email != "" {
-			if tr.emailResolver != nil {
-				log.Printf("DEBUG: Resolved user ID %s to email %s", userID, email)
-			}
 			return email
 		}
 	}

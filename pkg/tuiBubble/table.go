@@ -304,3 +304,8 @@ func (t *Table) GetSelectedFunc() SelectedFunc {
 func (t *Table) GetCopyFunc() CopyFunc {
 	return t.copyFunc
 }
+
+// SetFooterText updates the footer text dynamically
+func (t *Table) SetFooterText(text string) {
+	t.footerText = text
+}
