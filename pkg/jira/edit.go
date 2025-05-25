@@ -3,6 +3,7 @@ package jira
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,10 +20,12 @@ type EditResponse struct {
 // EditRequest struct holds request data for edit request.
 // Setting an Assignee requires an account ID.
 type EditRequest struct {
-	IssueType       string
-	ParentIssueKey  string
-	Summary         string
-	Body            string
+	IssueType      string
+	ParentIssueKey string
+	Summary        string
+	Body           string
+	// BodyIsRawADF indicates that Body contains raw ADF JSON that should be embedded directly
+	BodyIsRawADF    bool
 	Priority        string
 	Labels          []string
 	Components      []string
@@ -43,13 +46,16 @@ func (er *EditRequest) WithCustomFields(cf []IssueTypeField) {
 // Edit updates an issue using POST /issue endpoint.
 func (c *Client) Edit(key string, req *EditRequest) error {
 	data := getRequestDataForEdit(req)
+	if data == nil {
+		return fmt.Errorf("jira: invalid request - failed to parse ADF JSON")
+	}
 
 	body, err := json.Marshal(&data)
 	if err != nil {
 		return err
 	}
 
-	res, err := c.PutV2(context.Background(), "/issue/"+key, body, Header{
+	res, err := c.Put(context.Background(), "/issue/"+key, body, Header{
 		"Accept":       "application/json",
 		"Content-Type": "application/json",
 	})
@@ -73,7 +79,7 @@ type editFields struct {
 		Set string `json:"set,omitempty"`
 	} `json:"summary,omitempty"`
 	Description []struct {
-		Set string `json:"set,omitempty"`
+		Set interface{} `json:"set,omitempty"`
 	} `json:"description,omitempty"`
 	Priority []struct {
 		Set struct {
@@ -121,7 +127,7 @@ func (cfm *editFieldsMarshaler) MarshalJSON() ([]byte, error) {
 	if len(cfm.M.Summary) == 0 || cfm.M.Summary[0].Set == "" {
 		cfm.M.Summary = nil
 	}
-	if len(cfm.M.Description) == 0 || cfm.M.Description[0].Set == "" {
+	if len(cfm.M.Description) == 0 || cfm.M.Description[0].Set == nil {
 		cfm.M.Description = nil
 	}
 	if len(cfm.M.Priority) == 0 || cfm.M.Priority[0].Set.Name == "" {
@@ -167,13 +173,25 @@ func getRequestDataForEdit(req *EditRequest) *editRequest {
 		req.Labels = []string{}
 	}
 
+	var descriptionContent interface{}
+	if req.BodyIsRawADF && req.Body != "" {
+		// Parse the ADF JSON string into a map for direct embedding
+		var adfMap interface{}
+		if err := json.Unmarshal([]byte(req.Body), &adfMap); err != nil {
+			return nil // Return nil to indicate error, should be handled by caller
+		}
+		descriptionContent = adfMap
+	} else {
+		descriptionContent = req.Body
+	}
+
 	update := editFieldsMarshaler{editFields{
 		Summary: []struct {
 			Set string `json:"set,omitempty"`
 		}{{Set: req.Summary}},
 		Description: []struct {
-			Set string `json:"set,omitempty"`
-		}{{Set: req.Body}},
+			Set interface{} `json:"set,omitempty"`
+		}{{Set: descriptionContent}},
 		Priority: []struct {
 			Set struct {
 				Name string `json:"name,omitempty"`

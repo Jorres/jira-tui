@@ -25,7 +25,7 @@ type JiraMarkdownTranslator struct {
 }
 
 // NewJiraMarkdownTranslator constructs jira markdown translator.
-func NewJiraMarkdownTranslator() *JiraMarkdownTranslator {
+func NewJiraMarkdownTranslator(opts ...MarkdownTranslatorOption) *JiraMarkdownTranslator {
 	openHooks := nodeTypeHook{
 		NodePanel: nodePanelOpenHook,
 	}
@@ -34,11 +34,15 @@ func NewJiraMarkdownTranslator() *JiraMarkdownTranslator {
 		NodePanel: nodePanelCloseHook,
 	}
 
+	// Combine built-in hooks with any additional options
+	allOpts := []MarkdownTranslatorOption{
+		WithMarkdownOpenHooks(openHooks),
+		WithMarkdownCloseHooks(closeHooks),
+	}
+	allOpts = append(allOpts, opts...)
+
 	return &JiraMarkdownTranslator{
-		MarkdownTranslator: NewMarkdownTranslator(
-			WithMarkdownOpenHooks(openHooks),
-			WithMarkdownCloseHooks(closeHooks),
-		),
+		MarkdownTranslator: NewMarkdownTranslator(allOpts...),
 	}
 }
 

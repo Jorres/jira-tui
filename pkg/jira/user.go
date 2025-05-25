@@ -103,3 +103,131 @@ func (c *Client) userSearch(opt *UserSearchOptions, ver string) ([]*User, error)
 	}
 	return out, nil
 }
+
+type UserGetOptions struct {
+	Username  string
+	AccountID string
+}
+
+// UserGet gets a user using v3 version of the GET /user endpoint.
+func (c *Client) UserGet(opt *UserGetOptions) (*User, error) {
+	return c.userGet(opt, apiVersion3)
+}
+
+// UserGetV3 gets a user using v2 version of the GET /user endpoint.
+func (c *Client) UserGetV2(opt *UserGetOptions) (*User, error) {
+	return c.userGet(opt, apiVersion2)
+}
+
+func (c *Client) userGet(opt *UserGetOptions, ver string) (*User, error) {
+	if opt == nil {
+		return nil, ErrInvalidSearchOption
+	}
+
+	var (
+		opts []string
+		res  *http.Response
+		err  error
+	)
+
+	if opt.Username != "" {
+		opts = append(opts, fmt.Sprintf("username=%s", url.QueryEscape(opt.Username)))
+	}
+	if opt.AccountID != "" {
+		opts = append(opts, fmt.Sprintf("accountId=%s", url.QueryEscape(opt.AccountID)))
+	}
+	if len(opts) == 0 {
+		return nil, ErrInvalidSearchOption
+	}
+
+	path := fmt.Sprintf("%s?%s", "/user", strings.Join(opts, "&"))
+
+	switch ver {
+	case apiVersion2:
+		res, err = c.GetV2(context.Background(), path, nil)
+	default:
+		res, err = c.Get(context.Background(), path, nil)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	if res == nil {
+		return nil, ErrEmptyResponse
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	if res.StatusCode != http.StatusOK {
+		return nil, formatUnexpectedResponse(res)
+	}
+
+	var out *User
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+type UserListOptions struct {
+	StartsAt   int
+	MaxResults int
+}
+
+// UserList gets a user using v3 version of the GET /users/search endpoint.
+func (c *Client) UserList(opt *UserListOptions) ([]*User, error) {
+	return c.userList(opt, apiVersion3)
+}
+
+// UserListV3 gets a user using v2 version of the GET /users/search endpoint.
+func (c *Client) UserListV2(opt *UserListOptions) ([]*User, error) {
+	return c.userList(opt, apiVersion2)
+}
+
+func (c *Client) userList(opt *UserListOptions, ver string) ([]*User, error) {
+	if opt == nil {
+		return nil, ErrInvalidSearchOption
+	}
+
+	var (
+		opts []string
+		res  *http.Response
+		err  error
+	)
+
+	if opt.StartsAt != 0 {
+		opts = append(opts, fmt.Sprintf("startsAt=%v", opt.StartsAt))
+	}
+	if opt.MaxResults != 0 {
+		opts = append(opts, fmt.Sprintf("maxResults=%v", opt.StartsAt))
+	}
+	if len(opts) == 0 {
+		return nil, ErrInvalidSearchOption
+	}
+
+	path := fmt.Sprintf("%s?%s", "/users/search", strings.Join(opts, "&"))
+
+	switch ver {
+	case apiVersion2:
+		res, err = c.GetV2(context.Background(), path, nil)
+	default:
+		res, err = c.Get(context.Background(), path, nil)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	if res == nil {
+		return nil, ErrEmptyResponse
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	if res.StatusCode != http.StatusOK {
+		return nil, formatUnexpectedResponse(res)
+	}
+
+	var out []*User
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}

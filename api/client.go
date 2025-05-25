@@ -186,6 +186,46 @@ func ProxyUserSearch(c *jira.Client, opts *jira.UserSearchOptions) ([]*jira.User
 	return users, err
 }
 
+// ProxyUserGet uses either v2 or v3 version of the GET /user
+// endpoint to get the user.
+// Defaults to v3 if installation type is not defined in the config.
+func ProxyUserGet(c *jira.Client, opts *jira.UserGetOptions) (*jira.User, error) {
+	var (
+		user *jira.User
+		err  error
+	)
+
+	it := viper.GetString("installation")
+
+	if it == jira.InstallationTypeLocal {
+		user, err = c.UserGetV2(opts)
+	} else {
+		user, err = c.UserGet(opts)
+	}
+
+	return user, err
+}
+
+// ProxyUserList uses either v2 or v3 version of the GET /user/search
+// endpoint to list all users.
+// Defaults to v3 if installation type is not defined in the config.
+func ProxyUserList(c *jira.Client, opts *jira.UserListOptions) ([]*jira.User, error) {
+	var (
+		users []*jira.User
+		err   error
+	)
+
+	it := viper.GetString("installation")
+
+	if it == jira.InstallationTypeLocal {
+		users, err = c.UserListV2(opts)
+	} else {
+		users, err = c.UserList(opts)
+	}
+
+	return users, err
+}
+
 // ProxyTransitions uses either v2 or v3 version of the GET /issue/{key}/transitions
 // endpoint to fetch valid transitions for an issue.
 // Defaults to v3 if installation type is not defined in the config.

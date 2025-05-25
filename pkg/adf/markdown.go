@@ -2,10 +2,14 @@ package adf
 
 import (
 	"fmt"
+	"log"
 	"strings"
 )
 
 type nodeTypeHook map[NodeType]func(Connector) string
+
+// UserEmailResolver is a function type for resolving user IDs to emails
+type UserEmailResolver func(userID string) string
 
 // MarkdownTranslator is a markdown translator.
 type MarkdownTranslator struct {
@@ -21,8 +25,9 @@ type MarkdownTranslator struct {
 		depthU  int
 		counter map[int]int // each level starts with same numeric counter at the moment.
 	}
-	openHooks  nodeTypeHook
-	closeHooks nodeTypeHook
+	openHooks     nodeTypeHook
+	closeHooks    nodeTypeHook
+	emailResolver UserEmailResolver
 }
 
 // MarkdownTranslatorOption is a functional option for MarkdownTranslator.
@@ -61,6 +66,13 @@ func WithMarkdownOpenHooks(hooks nodeTypeHook) MarkdownTranslatorOption {
 func WithMarkdownCloseHooks(hooks nodeTypeHook) MarkdownTranslatorOption {
 	return func(tr *MarkdownTranslator) {
 		tr.closeHooks = hooks
+	}
+}
+
+// WithUserEmailResolver sets a user email resolver function
+func WithUserEmailResolver(resolver UserEmailResolver) MarkdownTranslatorOption {
+	return func(tr *MarkdownTranslator) {
+		tr.emailResolver = resolver
 	}
 }
 
@@ -139,6 +151,8 @@ func (tr *MarkdownTranslator) Open(n Connector, _ int) string {
 			tag.WriteString("\n\n")
 		case InlineNodeMention:
 			tag.WriteString(" @")
+			tag.WriteString(tr.setOpenTagAttributesForMention(attrs))
+			return tag.String() // Return early to avoid double processing
 		case InlineNodeCard:
 			tag.WriteString(" 📍 ")
 		case MarkStrong:
@@ -262,6 +276,47 @@ func (tr *MarkdownTranslator) setOpenTagAttributes(a interface{}) string {
 	}
 
 	return tag.String()
+}
+
+func (tr *MarkdownTranslator) setOpenTagAttributesForMention(a interface{}) string {
+	if a == nil {
+		return ""
+	}
+
+	attrs := a.(map[string]interface{})
+
+	// For mentions, we want to render as @email instead of @displayName
+	if userID, ok := attrs["id"]; ok {
+		if email := tr.resolveUserEmail(userID.(string)); email != "" {
+			if tr.emailResolver != nil {
+				log.Printf("DEBUG: Resolved user ID %s to email %s", userID, email)
+			}
+			return email
+		}
+	}
+
+	// Fallback to display name if email resolution fails
+	if text, ok := attrs["text"]; ok {
+		textStr := text.(string)
+		if tr.emailResolver != nil {
+			log.Printf("DEBUG: Using fallback text: %s", textStr)
+		}
+		// Remove leading @ if present since we already add @ in the Open function
+		if strings.HasPrefix(textStr, "@") {
+			return textStr[1:]
+		}
+		return textStr
+	}
+
+	return ""
+}
+
+// resolveUserEmail attempts to resolve a user ID to email
+func (tr *MarkdownTranslator) resolveUserEmail(userID string) string {
+	if tr.emailResolver != nil {
+		return tr.emailResolver(userID)
+	}
+	return ""
 }
 
 func (*MarkdownTranslator) setCloseTagAttributes(a interface{}) string {

@@ -2,11 +2,16 @@ package edit
 
 import (
 	"fmt"
+	"log"
+	"os"
+	"regexp"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	mdadf "md-adf-exp/adf"
 
 	"github.com/ankitpokhrel/jira-cli/api"
 	"github.com/ankitpokhrel/jira-cli/internal/cmdcommon"
@@ -17,6 +22,8 @@ import (
 	"github.com/ankitpokhrel/jira-cli/pkg/md"
 	"github.com/ankitpokhrel/jira-cli/pkg/surveyext"
 )
+
+var _ = log.Fatal
 
 const (
 	helpText = `Edit an issue in a given project with minimal information.`
@@ -87,7 +94,13 @@ func edit(cmd *cobra.Command, args []string) {
 	if issue.Fields.Description != nil {
 		if adfBody, ok := issue.Fields.Description.(*adf.ADF); ok {
 			isADF = true
-			originalBody = adf.NewTranslator(adfBody, adf.NewJiraMarkdownTranslator()).Translate()
+			// Create a user email resolver function
+			emailResolver := func(userID string) string {
+				return resolveUserIDToEmail(userID, client, project)
+			}
+			originalBody = adf.NewTranslator(adfBody, adf.NewJiraMarkdownTranslator(
+				adf.WithUserEmailResolver(emailResolver),
+			)).Translate()
 		} else {
 			originalBody = issue.Fields.Description.(string)
 		}
@@ -138,7 +151,19 @@ func edit(cmd *cobra.Command, args []string) {
 		defer s.Stop()
 
 		body := params.body
-		if isADF {
+		bodyIsRawADF := false
+		if isADF && body != "" {
+			// Convert markdown to ADF if we have mentions
+			adfBody, convErr := convertMarkdownToADF(body, client, project)
+			if convErr != nil {
+				// Fall back to original conversion if ADF conversion fails
+				fmt.Fprintf(os.Stderr, "Warning: ADF conversion failed, falling back to JiraMD: %v\n", convErr)
+				body = md.ToJiraMD(body)
+			} else {
+				body = adfBody
+				bodyIsRawADF = true
+			}
+		} else if isADF {
 			body = md.ToJiraMD(body)
 		}
 
@@ -151,6 +176,7 @@ func edit(cmd *cobra.Command, args []string) {
 			ParentIssueKey:  parent,
 			Summary:         params.summary,
 			Body:            body,
+			BodyIsRawADF:    bodyIsRawADF,
 			Priority:        params.priority,
 			Labels:          labels,
 			Components:      components,
@@ -162,6 +188,9 @@ func edit(cmd *cobra.Command, args []string) {
 			cmdcommon.ValidateCustomFields(edr.CustomFields, configuredCustomFields)
 			edr.WithCustomFields(configuredCustomFields)
 		}
+
+		f, _ := os.OpenFile("/home/jorres/hobbies/jira-cli/debug.log", os.O_CREATE|os.O_RDWR, 0644)
+		fmt.Fprintf(f, "%+v\n", edr)
 
 		return client.Edit(params.issueKey, &edr)
 	}()
@@ -428,6 +457,130 @@ func getMetadataQuestions(meta []string, issue *jira.Issue) []*survey.Question {
 	}
 
 	return qs
+}
+
+// extractEmailsFromMarkdown extracts all @email patterns from markdown text
+func extractEmailsFromMarkdown(markdown string) []string {
+	// Pattern matches @word@domain.tld
+	emailPattern := regexp.MustCompile(`@[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
+	matches := emailPattern.FindAllString(markdown, -1)
+
+	// Remove duplicates
+	emailSet := make(map[string]bool)
+	var emails []string
+	for _, match := range matches {
+		if !emailSet[match] {
+			emailSet[match] = true
+			emails = append(emails, match)
+		}
+	}
+
+	return emails
+}
+
+// resolveUserIDs takes a list of @emails and returns a mapping of email -> userID
+func resolveUserIDs(emails []string, client *jira.Client, project string) (map[string]string, error) {
+	userMapping := make(map[string]string)
+
+	for _, email := range emails {
+		// Remove @ prefix for user search
+		cleanEmail := strings.TrimPrefix(email, "@")
+
+		users, err := api.ProxyUserSearch(client, &jira.UserSearchOptions{
+			Query:   cleanEmail,
+			Project: project,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to search for user %s: %v\n", cleanEmail, err)
+			continue
+		}
+
+		if len(users) > 0 {
+			// Use AccountID for cloud installations, Name for server
+			it := viper.GetString("installation")
+			var userID string
+			if it == jira.InstallationTypeLocal {
+				userID = users[0].Name
+			} else {
+				userID = users[0].AccountID
+			}
+			userMapping[email] = userID
+			fmt.Fprintf(os.Stderr, "Info: Resolved %s to user ID %s\n", email, userID)
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: No user found for email %s\n", cleanEmail)
+		}
+	}
+
+	return userMapping, nil
+}
+
+// convertMarkdownToADF converts markdown to ADF JSON string if mentions are found
+func convertMarkdownToADF(body string, client *jira.Client, project string) (string, error) {
+	// Check if there are any @email mentions in the body
+	emails := extractEmailsFromMarkdown(body)
+	if len(emails) == 0 {
+		// No mentions found, return empty to indicate we should use fallback
+		return "", fmt.Errorf("no mentions found")
+	}
+
+	// Resolve user IDs for the emails
+	userMapping, err := resolveUserIDs(emails, client, project)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve user IDs: %w", err)
+	}
+
+	// If no users were resolved, fall back to standard conversion
+	if len(userMapping) == 0 {
+		return "", fmt.Errorf("no users resolved from mentions")
+	}
+
+	// Convert markdown to ADF using the converter
+	converter := mdadf.NewAdfConverter()
+	adfDoc, err := converter.ConvertToADF([]byte(body), userMapping)
+	if err != nil {
+		return "", fmt.Errorf("failed to convert markdown to ADF: %w", err)
+	}
+
+	// Convert ADF document to JSON string
+	jsonBytes, err := adfDoc.ToJSON()
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal ADF to JSON: %w", err)
+	}
+
+	return string(jsonBytes), nil
+}
+
+// resolveUserIDToEmail resolves a Jira user ID to their email address
+func resolveUserIDToEmail(userID string, client *jira.Client, project string) string {
+	// Try to get user info by ID
+	user, err := api.ProxyUserGet(client, &jira.UserGetOptions{
+		AccountID: userID,
+	})
+
+	if err != nil {
+		log.Printf("DEBUG: Failed to search for user %s: %v", userID, err)
+		fmt.Fprintf(os.Stderr, "Warning: Failed to resolve user ID %s: %v\n", userID, err)
+		return ""
+	}
+
+	log.Printf("DEBUG: Found %v user for ID %s", user, userID)
+
+	log.Printf("DEBUG: First user: Email=%s, Name=%s, DisplayName=%s, AccountID=%s",
+		user.Email, user.Name, user.DisplayName, user.AccountID)
+
+	// Check if we have an email field
+	if user.Email != "" {
+		log.Printf("DEBUG: Using email field: %s", user.Email)
+		return user.Email
+	}
+	// Some installations might use different field names
+	if user.Name != "" && strings.Contains(user.Name, "@") {
+		log.Printf("DEBUG: Using name field as email: %s", user.Name)
+		return user.Name
+	}
+
+	log.Printf("DEBUG: No email found for user ID %s", userID)
+	return ""
 }
 
 func setFlags(cmd *cobra.Command) {
