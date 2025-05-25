@@ -215,6 +215,33 @@ func (l *IssueList) editIssue(issue *jira.Issue) tea.Cmd {
 	})
 }
 
+func (l *IssueList) createIssue() tea.Cmd {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vim"
+	}
+
+	args := []string{}
+
+	config := viper.GetString("config")
+	if config != "" {
+		args = append(args,
+			"-c",
+			config,
+		)
+	}
+
+	args = append(args,
+		"issue",
+		"create",
+	)
+
+	c := exec.Command("jira", args...)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return editorFinishedMsg{err}
+	})
+}
+
 func (l *IssueList) moveIssue(issue *jira.Issue) tea.Cmd {
 	args := []string{}
 
@@ -427,6 +454,8 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				selectedFunc(row+1, 0, tableData)
 			}
 			return l, nil
+		case "n":
+			return l, l.createIssue()
 		case "ctrl+r", "f5":
 			l.table.SetData(l.data())
 			l.table, cmd = l.table.Update(msg)
@@ -662,7 +691,7 @@ func (l *IssueList) assignColumns(columns []string, issue *jira.Issue) []string 
 }
 
 // Utility functions to support rendering
-const tableHelpText = "j/↓: Down • k/↑: Up • v: View • c: Copy URL • CTRL+r/F5: Refresh • CTRL+e: Assign to epic • Enter: Select/Open • q/ESC/CTRL+c: Quit"
+const tableHelpText = "j/↓ k/↑: down up  •  v: view  •  n: new issue  •  c: copy URL  •  CTRL+r/F5: refresh  •  CTRL+e: assign to epic  •  enter: select/Open  •  q/ESC/CTRL+c: quit"
 
 // navigate opens the issue in browser.
 func navigate(server string) tuiBubble.SelectedFunc {

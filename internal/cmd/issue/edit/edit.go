@@ -516,22 +516,19 @@ func resolveUserIDs(emails []string, client *jira.Client, project string) (map[s
 
 // convertMarkdownToADF converts markdown to ADF JSON string if mentions are found
 func convertMarkdownToADF(body string, client *jira.Client, project string) (string, error) {
-	// Check if there are any @email mentions in the body
+	var userMapping map[string]string
+
 	emails := extractEmailsFromMarkdown(body)
-	if len(emails) == 0 {
-		// No mentions found, return empty to indicate we should use fallback
-		return "", fmt.Errorf("no mentions found")
-	}
-
-	// Resolve user IDs for the emails
-	userMapping, err := resolveUserIDs(emails, client, project)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve user IDs: %w", err)
-	}
-
-	// If no users were resolved, fall back to standard conversion
-	if len(userMapping) == 0 {
-		return "", fmt.Errorf("no users resolved from mentions")
+	if len(emails) != 0 {
+		var err error
+		userMapping, err = resolveUserIDs(emails, client, project)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve user IDs: %w", err)
+		}
+		// If no users were resolved, fall back to standard conversion
+		if len(userMapping) == 0 {
+			return "", fmt.Errorf("no users resolved from mentions")
+		}
 	}
 
 	// Convert markdown to ADF using the converter
