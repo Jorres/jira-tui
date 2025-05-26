@@ -242,6 +242,35 @@ func (l *IssueList) createIssue() tea.Cmd {
 	})
 }
 
+func (l *IssueList) addComment(iss *jira.Issue) tea.Cmd {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vim"
+	}
+
+	args := []string{}
+
+	config := viper.GetString("config")
+	if config != "" {
+		args = append(args,
+			"-c",
+			config,
+		)
+	}
+
+	args = append(args,
+		"issue",
+		"comment",
+		"add",
+		iss.Key,
+	)
+
+	c := exec.Command("jira", args...)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return editorFinishedMsg{err}
+	})
+}
+
 func (l *IssueList) moveIssue(issue *jira.Issue) tea.Cmd {
 	args := []string{}
 
@@ -431,7 +460,7 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "e":
 			return l, l.editIssue(l.GetSelectedIssueShift(0))
-		case "c":
+		case "u":
 			// Copy URL and show confirmation
 			row := l.table.GetCursorRow()
 			tableData := l.data()
@@ -456,6 +485,8 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return l, nil
 		case "n":
 			return l, l.createIssue()
+		case "c":
+			return l, l.addComment(l.GetSelectedIssueShift(0))
 		case "ctrl+r", "f5":
 			l.table.SetData(l.data())
 			l.table, cmd = l.table.Update(msg)
@@ -558,7 +589,7 @@ func (l *IssueList) setupTable() *tuiBubble.Table {
 		tuiBubble.WithTableFooterText(l.FooterText),
 		tuiBubble.WithTableHelpText(splitViewHelpText),
 		tuiBubble.WithSelectedFunc(navigate(l.Server)),
-		tuiBubble.WithCopyFunc(copyURL(l.Server)),
+		tuiBubble.WithCopyFunc(copyURLToClipboard(l.Server)),
 	)
 
 	table.SetUnderlyingTable()
@@ -690,10 +721,8 @@ func (l *IssueList) assignColumns(columns []string, issue *jira.Issue) []string 
 	return bucket
 }
 
-// Utility functions to support rendering
-const tableHelpText = "j/↓ k/↑: down up  •  v: view  •  n: new issue  •  c: copy URL  •  CTRL+r/F5: refresh  •  CTRL+e: assign to epic  •  enter: select/Open  •  q/ESC/CTRL+c: quit"
+const tableHelpText = "j/↓ k/↑: down up  •  v: view  •  n: new issue  •  u: copy URL  •  c: add comment  •  CTRL+r/F5: refresh  •  CTRL+e: assign to epic  •  enter: select/Open  •  q/ESC/CTRL+c: quit"
 
-// navigate opens the issue in browser.
 func navigate(server string) tuiBubble.SelectedFunc {
 	return func(row, _ int, data interface{}) {
 		d := data.(tuiBubble.TableData)
@@ -706,8 +735,7 @@ func navigate(server string) tuiBubble.SelectedFunc {
 	}
 }
 
-// copyURL copies issue URL to clipboard.
-func copyURL(server string) tuiBubble.CopyFunc {
+func copyURLToClipboard(server string) tuiBubble.CopyFunc {
 	return func(row, _ int, data interface{}) {
 		d := data.(tuiBubble.TableData)
 		if row <= 0 || row >= len(d) {
