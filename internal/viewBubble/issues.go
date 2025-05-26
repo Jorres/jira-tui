@@ -435,7 +435,7 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			l.issueDetailView, cmd1 = l.safeIssueUpdate(l.GetSelectedIssueShift(+1))
 			l.table, cmd2 = l.table.Update(msg)
 			return l, tea.Batch(cmd1, cmd2)
-		case "ctrl+e":
+		case "ctrl+p":
 			// I hate golang, why tf []concrete -> []interface is invalid when concrete satisfies interface...
 			epics, _ := l.FetchAllEpics()
 			listItems := []list.Item{}
@@ -721,7 +721,7 @@ func (l *IssueList) assignColumns(columns []string, issue *jira.Issue) []string 
 	return bucket
 }
 
-const tableHelpText = "j/↓ k/↑: down up  •  v: view  •  n: new issue  •  u: copy URL  •  c: add comment  •  CTRL+r/F5: refresh  •  CTRL+e: assign to epic  •  enter: select/Open  •  q/ESC/CTRL+c: quit"
+const tableHelpText = "j/↓ k/↑: down up, CTRL+e/y scroll  •  v: view  •  n: new issue  •  u: copy URL  •  c: add comment  •  CTRL+r/F5: refresh  •  CTRL+p: assign to epic  •  enter: select/Open  •  q/ESC/CTRL+c: quit"
 
 func navigate(server string) tuiBubble.SelectedFunc {
 	return func(row, _ int, data interface{}) {
