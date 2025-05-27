@@ -2,8 +2,8 @@ package viewBubble
 
 import (
 	"fmt"
-	"io"
 	"log"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -52,8 +52,7 @@ type IssueOption struct {
 	NumComments uint
 }
 
-// Issue is a list view for issues.
-type Issue struct {
+type IssueModel struct {
 	Server  string
 	Data    *jira.Issue
 	Display DisplayFormat
@@ -77,12 +76,23 @@ type Issue struct {
 	// Scrolling state
 	firstVisibleLine int
 	renderedLines    []string
-	// headerLines      int // Number of lines before "--- Description ---"
+
+	currentlyHighlightedLinkPos       int
+	currentlyHighlightedLinkCountdown int
+
+	currentlyHighlightedLinkText string
+	currentlyHighlightedLinkURL  string
+
+	uniqueLinkTitleReplacement string
+	uniqueLinkTextReplacement  string
+	nLinks                     int
 }
 
 // RenderedOut translates raw data to the format we want to display in.
-func (i Issue) RenderedOut(renderer *glamour.TermRenderer) (string, error) {
+func (i *IssueModel) RenderedOut(renderer *glamour.TermRenderer) (string, error) {
 	var res strings.Builder
+
+	i.currentlyHighlightedLinkCountdown = i.currentlyHighlightedLinkPos
 
 	for _, p := range i.fragments() {
 		if p.Parse {
@@ -99,42 +109,7 @@ func (i Issue) RenderedOut(renderer *glamour.TermRenderer) (string, error) {
 	return res.String(), nil
 }
 
-func (i Issue) String() string {
-	var s strings.Builder
-
-	s.WriteString(i.header())
-
-	desc := i.description()
-	if desc != "" {
-		s.WriteString(fmt.Sprintf("\n\n%s\n\n%s", i.separator("Description"), desc))
-	}
-	if len(i.Data.Fields.Subtasks) > 0 {
-		s.WriteString(
-			fmt.Sprintf(
-				"\n\n%s\n\n%s\n",
-				i.separator(fmt.Sprintf("%d Subtasks", len(i.Data.Fields.Subtasks))),
-				i.subtasks(),
-			),
-		)
-	}
-	if len(i.Data.Fields.IssueLinks) > 0 {
-		s.WriteString(fmt.Sprintf("\n\n%s\n\n%s\n", i.separator("Linked Issues"), i.linkedIssues()))
-	}
-	total := i.Data.Fields.Comment.Total
-
-	if total > 0 && i.Options.NumComments > 0 {
-		sep := fmt.Sprintf("%d Comments", total)
-		s.WriteString(fmt.Sprintf("\n\n%s", i.separator(sep)))
-		for _, comment := range i.comments() {
-			s.WriteString(fmt.Sprintf("\n\n%s\n\n%s\n", comment.meta, comment.body))
-		}
-	}
-	s.WriteString(i.footer())
-
-	return s.String()
-}
-
-func (i Issue) fragments() []fragment {
+func (i *IssueModel) fragments() []fragment {
 	scraps := []fragment{
 		{Body: i.header(), Parse: true},
 	}
@@ -192,7 +167,7 @@ func (i Issue) fragments() []fragment {
 	return append(scraps, newBlankFragment(1), fragment{Body: i.footer()}, newBlankFragment(2))
 }
 
-func (i Issue) separator(msg string) string {
+func (i *IssueModel) separator(msg string) string {
 	pad := func(m string) string {
 		if m != "" {
 			return fmt.Sprintf(" %s ", m)
@@ -211,7 +186,7 @@ func (i Issue) separator(msg string) string {
 	return gray(fmt.Sprintf("%s%s%s", sep, pad(msg), sep))
 }
 
-func (i Issue) header() string {
+func (i *IssueModel) header() string {
 	as := i.Data.Fields.Assignee.Name
 	if as == "" {
 		as = "Unassigned"
@@ -252,7 +227,7 @@ func (i Issue) header() string {
 	)
 }
 
-func (i Issue) description() string {
+func (i *IssueModel) description() string {
 	if i.Data.Fields.Description == nil {
 		return ""
 	}
@@ -268,8 +243,62 @@ func (i Issue) description() string {
 
 	// Apply view-only link text replacement for better readability
 	desc = replaceRedundantLinkText(desc)
+	desc = i.colorizeSelected(desc)
 
 	return desc
+}
+
+func debug(v ...any) {
+	f, _ := os.OpenFile("/home/jorres/hobbies/jira-cli/debug.log", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	for _, val := range v {
+		fmt.Fprintln(f, val)
+	}
+	f.Close()
+}
+
+func (i *IssueModel) colorizeSelected(input string) string {
+	re := regexp.MustCompile(`\[(.*?)\]\((.*?)\)`)
+	matches := re.FindAllStringSubmatchIndex(input, -1)
+
+	var out strings.Builder
+	last := 0
+	for _, m := range matches {
+		fullStart, fullEnd := m[0], m[1]
+		textStart, textEnd := m[2], m[3]
+		urlStart, urlEnd := m[4], m[5]
+
+		orig := input[fullStart:fullEnd]
+		linkText := input[textStart:textEnd]
+		linkURL := input[urlStart:urlEnd]
+
+		var newChunk string
+		if i.currentlyHighlightedLinkCountdown == 0 {
+			replacement := strings.Repeat("X", len(linkText))
+			replacementLink := "https://" + strings.Repeat("Y", len(linkURL)-len("https://"))
+
+			i.currentlyHighlightedLinkText = linkText
+			i.currentlyHighlightedLinkURL = linkURL
+			go func() {
+				// takes a while so I'd like it copied async
+				copyToClipboard(linkURL)
+			}()
+			i.uniqueLinkTitleReplacement = replacement
+			i.uniqueLinkTextReplacement = replacementLink
+
+			newChunk = fmt.Sprintf("[%s](%s)", replacement, replacementLink)
+		} else {
+			newChunk = orig
+		}
+
+		i.currentlyHighlightedLinkCountdown--
+
+		out.WriteString(input[last:fullStart])
+		out.WriteString(newChunk)
+		last = fullEnd
+	}
+
+	out.WriteString(input[last:])
+	return out.String()
 }
 
 // replaceRedundantLinkText replaces link text with "link" when text equals URL (view-only)
@@ -296,7 +325,7 @@ func replaceRedundantLinkText(text string) string {
 	})
 }
 
-func (i Issue) subtasks() string {
+func (i *IssueModel) subtasks() string {
 	if len(i.Data.Fields.Subtasks) == 0 {
 		return ""
 	}
@@ -342,7 +371,7 @@ func (i Issue) subtasks() string {
 	return subtasks.String()
 }
 
-func (i Issue) linkedIssues() string {
+func (i *IssueModel) linkedIssues() string {
 	if len(i.Data.Fields.IssueLinks) == 0 {
 		return ""
 	}
@@ -417,7 +446,7 @@ func (i Issue) linkedIssues() string {
 	return linked.String()
 }
 
-func (i Issue) comments() []issueComment {
+func (i *IssueModel) comments() []issueComment {
 	total := i.Data.Fields.Comment.Total
 	comments := make([]issueComment, 0, total)
 
@@ -441,6 +470,7 @@ func (i Issue) comments() []issueComment {
 		}
 		// Apply view-only link text replacement for better readability
 		body = replaceRedundantLinkText(body)
+		body = i.colorizeSelected(body)
 		authorName := func() string {
 			if c.Author.DisplayName != "" {
 				return c.Author.DisplayName
@@ -464,7 +494,7 @@ func (i Issue) comments() []issueComment {
 	return comments
 }
 
-func (i Issue) footer() string {
+func (i *IssueModel) footer() string {
 	var out strings.Builder
 
 	nc := int(i.Options.NumComments)
@@ -482,39 +512,20 @@ func (i Issue) footer() string {
 	return out.String()
 }
 
-// renderPlain renders the issue in plain view.
-func (i Issue) renderPlain(w io.Writer) error {
-	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("notty"),
-		glamour.WithWordWrap(wordWrap),
-	)
-	if err != nil {
-		return err
-	}
-	out, err := r.Render(i.String())
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprint(w, out)
-	return err
-}
-
 // Init initializes the IssueList model.
-func (iss Issue) Init() tea.Cmd {
+func (iss IssueModel) Init() tea.Cmd {
 	return nil
 }
 
 // Update handles user input and updates the model state.
-func (iss *Issue) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (iss IssueModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
 	case *jira.Issue:
 		iss.Data = msg
 		// Reset scroll when new issue is loaded
-		iss.firstVisibleLine = 0
-		iss.renderedLines = nil
-		iss.calculateViewportDimensions()
+		iss.ResetResetables()
 	case tuiBubble.WidgetSizeMsg:
 		iss.RawWidth = msg.Width
 		iss.RawHeight = msg.Height
@@ -529,15 +540,34 @@ func (iss *Issue) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			iss.scrollDown()
 		case "ctrl+y":
 			iss.scrollUp()
+		case "tab":
+			if iss.currentlyHighlightedLinkPos == iss.nLinks-1 {
+				// set to "no links selected"
+				iss.currentlyHighlightedLinkPos = -1
+				// scroll back up all the way
+				iss.firstVisibleLine = 0
+			} else {
+				iss.currentlyHighlightedLinkPos++
+
+				// scroll down until the link is visible
+				for {
+					iss.prepareRenderedLines()
+					out := iss.getVisibleLines()
+
+					if len(iss.uniqueLinkTitleReplacement) > 0 && strings.Contains(out, iss.uniqueLinkTitleReplacement) {
+						break
+					}
+
+					iss.scrollDown()
+				}
+			}
 		}
 	}
 
 	return iss, cmd
 }
 
-// calculateViewportDimensions calculates the actual viewport dimensions
-// accounting for margins and borders
-func (iss *Issue) calculateViewportDimensions() {
+func (iss *IssueModel) calculateViewportDimensions() {
 	// Calculate viewport with 10% margins
 	iss.viewportWidth = int(float32(iss.RawWidth) * 0.9)
 	// iss.viewportHeight = int(float32(iss.RawHeight) * 0.9)
@@ -549,10 +579,8 @@ func (iss *Issue) calculateViewportDimensions() {
 }
 
 // scrollDown scrolls the content down by configured scroll size
-func (iss *Issue) scrollDown() {
-	if iss.renderedLines == nil {
-		iss.prepareRenderedLines()
-	}
+func (iss *IssueModel) scrollDown() {
+	iss.prepareRenderedLines()
 
 	maxScroll := len(iss.renderedLines) - iss.contentHeight
 	if maxScroll < 0 {
@@ -577,7 +605,7 @@ func (iss *Issue) scrollDown() {
 }
 
 // scrollUp scrolls the content up by configured scroll size
-func (iss *Issue) scrollUp() {
+func (iss *IssueModel) scrollUp() {
 	scrollSize := viper.GetInt("bubble.issue.scroll_size")
 	if scrollSize <= 0 {
 		scrollSize = 1 // fallback to 1 if not configured or invalid
@@ -593,7 +621,7 @@ func (iss *Issue) scrollUp() {
 }
 
 // prepareRenderedLines renders the full content and splits it into lines
-func (iss *Issue) prepareRenderedLines() {
+func (iss *IssueModel) prepareRenderedLines() {
 	r, err := MDRenderer()
 	if err != nil {
 		panic(err)
@@ -604,54 +632,68 @@ func (iss *Issue) prepareRenderedLines() {
 	}
 
 	iss.renderedLines = strings.Split(out, "\n")
-
-	// // Find the header boundary ("--- Description ---" line)
-	// iss.headerLines = 0
-	// for i, line := range iss.renderedLines {
-	// 	if strings.Contains(line, "Description") && (strings.Contains(line, "─") || strings.Contains(line, "---")) {
-	// 		iss.headerLines = i + 1 // Include the separator line in header
-	// 		break
-	// 	}
-	// }
 }
 
-func NewIssueFromSelected(l *IssueList, width, height int) *Issue {
-	iss := &Issue{
-		Server:    l.Server,
-		Data:      l.GetSelectedIssueShift(0),
-		Options:   IssueOption{NumComments: 10},
-		ListView:  l,
-		RawWidth:  width,
-		RawHeight: height,
+func NewIssueFromSelected(l *IssueList, width, height int) IssueModel {
+	iss := IssueModel{
+		Server:                            l.Server,
+		Data:                              l.GetSelectedIssueShift(0),
+		Options:                           IssueOption{NumComments: 10},
+		ListView:                          l,
+		RawWidth:                          width,
+		RawHeight:                         height,
+		currentlyHighlightedLinkPos:       -1,
+		currentlyHighlightedLinkCountdown: -1,
 	}
+	iss.countLinks()
 	iss.calculateViewportDimensions()
 	return iss
 }
 
-// View renders the IssueList.
-func (iss *Issue) View() string {
-	// Prepare rendered lines if not cached
-	if iss.renderedLines == nil {
-		iss.prepareRenderedLines()
+func (iss *IssueModel) countLinks() {
+	re := regexp.MustCompile(`\[(.*?)\]\((.*?)\)`)
+	linkCount := 0
+
+	for _, p := range iss.fragments() {
+		matches := re.FindAllString(p.Body, -1)
+		linkCount += len(matches)
 	}
 
-	if iss.contentHeight <= 0 {
-		return "Sorry, no issues yet"
-	}
+	iss.nLinks = linkCount
+}
 
-	// Determine what lines to show
+func (iss *IssueModel) getVisibleLines() string {
 	var visibleLines []string
 	if len(iss.renderedLines) <= iss.contentHeight {
-		// Content fits entirely, show all
 		visibleLines = iss.renderedLines
 	} else {
-		// Content needs scrolling
 		startLine := iss.firstVisibleLine
 		endLine := startLine + iss.contentHeight
 		visibleLines = iss.renderedLines[startLine:endLine]
 	}
 
-	out := strings.Join(visibleLines, "\n")
+	return strings.Join(visibleLines, "\n")
+}
+
+// View renders the IssueList.
+func (iss IssueModel) View() string {
+	iss.prepareRenderedLines()
+
+	if iss.contentHeight <= 0 {
+		return "Sorry, no issues yet"
+	}
+
+	out := iss.getVisibleLines()
+
+	if len(iss.uniqueLinkTitleReplacement) > 0 && strings.Contains(out, iss.uniqueLinkTitleReplacement) {
+		coloredText := coloredOut(iss.currentlyHighlightedLinkText, color.BgYellow)
+		out = strings.ReplaceAll(out, iss.uniqueLinkTitleReplacement, coloredText)
+	}
+
+	if len(iss.uniqueLinkTextReplacement) > 0 && strings.Contains(out, iss.uniqueLinkTextReplacement) {
+		coloredText := coloredOut(iss.currentlyHighlightedLinkURL, color.BgYellow)
+		out = strings.ReplaceAll(out, iss.uniqueLinkTextReplacement, coloredText)
+	}
 
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -663,3 +705,23 @@ func (iss *Issue) View() string {
 
 	return boxStyle.Render(out)
 }
+
+func (iss *IssueModel) ResetResetables() {
+	iss.currentlyHighlightedLinkCountdown = -1
+	iss.currentlyHighlightedLinkPos = -1
+	iss.currentlyHighlightedLinkText = ""
+	iss.currentlyHighlightedLinkURL = ""
+
+	iss.firstVisibleLine = 0
+	iss.renderedLines = nil
+	iss.calculateViewportDimensions()
+	iss.countLinks()
+}
+
+// currently highlighted link url feature:
+// proof of concept works
+// 1. you need to correctly loop over, not do %3. Count the number of links beforehand
+// 2. scrolling is not done
+// - Some nicer coloring and visual indication that link has been copied would be nice.
+// - The whole feature feels like fighting against the system, to be honest. Coloring BEFORE calling glamour should work and none of this
+// would be necessary.

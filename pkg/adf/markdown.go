@@ -25,8 +25,9 @@ type MarkdownTranslator struct {
 		depthU  int
 		counter map[int]int // each level starts with same numeric counter at the moment.
 	}
-	openHooks     nodeTypeHook
-	closeHooks    nodeTypeHook
+	openHooks  nodeTypeHook
+	closeHooks nodeTypeHook
+
 	emailResolver UserEmailResolver
 }
 

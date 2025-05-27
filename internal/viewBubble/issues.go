@@ -57,7 +57,7 @@ type IssueList struct {
 
 	// Split view related fields
 	showSplitView   bool
-	issueDetailView *Issue
+	issueDetailView IssueModel
 
 	// Status message fields
 	statusMessage string
@@ -351,12 +351,12 @@ func (l *IssueList) GetSelectedIssueShift(shift int) *jira.Issue {
 	return iss
 }
 
-func (l *IssueList) safeIssueUpdate(msg tea.Msg) (*Issue, tea.Cmd) {
+func (l *IssueList) safeIssueUpdate(msg tea.Msg) (IssueModel, tea.Cmd) {
 	m, cmd := l.issueDetailView.Update(msg)
-	if v, ok := m.(*Issue); ok {
+	if v, ok := m.(IssueModel); ok {
 		return v, cmd
 	} else {
-		panic("expected *Issue from some of the issue model updates")
+		panic("expected IssueModel from some of the issue model updates")
 	}
 }
 
@@ -435,6 +435,9 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			l.issueDetailView, cmd1 = l.safeIssueUpdate(l.GetSelectedIssueShift(+1))
 			l.table, cmd2 = l.table.Update(msg)
 			return l, tea.Batch(cmd1, cmd2)
+		case "tab", "ctrl+e", "ctrl+y":
+			l.issueDetailView, cmd = l.safeIssueUpdate(msg)
+			return l, cmd
 		case "ctrl+p":
 			// I hate golang, why tf []concrete -> []interface is invalid when concrete satisfies interface...
 			epics, _ := l.FetchAllEpics()
@@ -499,11 +502,12 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// If we're in issue detail mode, pass the key message to the issue detail view
-	var cmd1, cmd2 tea.Cmd
-	l.table, cmd1 = l.table.Update(msg)
-	l.issueDetailView, cmd2 = l.safeIssueUpdate(msg)
+	// var cmd1, cmd2 tea.Cmd
+	// l.table, cmd1 = l.table.Update(msg)
+	// l.issueDetailView, cmd2 = l.safeIssueUpdate(msg)
+	debug(msg)
 
-	return l, tea.Batch(cmd1, cmd2)
+	return l, cmd
 }
 
 func (l *IssueList) FetchAndRefreshCache() {
