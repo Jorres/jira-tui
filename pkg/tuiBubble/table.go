@@ -538,7 +538,7 @@ func (t *Table) PrefetchTopIssues() {
 	concurrencyLimit := 3 // Limit concurrent requests to avoid overwhelming the API
 	sem := make(chan struct{}, concurrencyLimit)
 
-	for i := 0; i < prefetchCount; i++ {
+	for i := 0; i < min(prefetchCount, len(t.allIssues)); i++ {
 		iss := t.allIssues[i]
 		key := iss.Key
 

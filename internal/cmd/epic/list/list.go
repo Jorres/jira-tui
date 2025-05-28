@@ -105,7 +105,7 @@ func singleEpicView(cmd *cobra.Command, flags query.FlagParser, key, project, pr
 	q.Params().Parent = key
 	fetchAllIssuesOfEpic := list.MakeFetcherFromQuery(q, debug)
 
-	issues, total := fetchAllIssuesOfEpic()
+	_, total := fetchAllIssuesOfEpic()
 	if total == 0 {
 		fmt.Println()
 		cmdutil.Failed("No result found for given query in project %q", project)
@@ -141,7 +141,14 @@ func singleEpicView(cmd *cobra.Command, flags query.FlagParser, key, project, pr
 		Timezone: viper.GetString("timezone"),
 	}
 
-	v := viewBubble.NewIssueList(project, server, total, issues, fetchAllIssuesOfEpic, nil, displayFormat)
+	tabs := []*viewBubble.TabConfig{
+		{
+			Name:        "Epics",
+			FetchIssues: fetchAllIssuesOfEpic,
+			FetchEpics:  func() ([]*jira.Issue, int) { return []*jira.Issue{}, 0 },
+		},
+	}
+	v := viewBubble.NewIssueList(project, server, total, tabs, displayFormat)
 
 	cmdutil.ExitIfError(v.RunView())
 }
@@ -160,7 +167,7 @@ func epicExplorerView(cmd *cobra.Command, flags query.FlagParser, project, proje
 		cmdutil.ExitIfError(err)
 	}
 
-	epics, total := fetchAllEpics()
+	_, total := fetchAllEpics()
 	if total == 0 {
 		fmt.Println()
 		return
@@ -190,7 +197,14 @@ func epicExplorerView(cmd *cobra.Command, flags query.FlagParser, project, proje
 		Timezone:     viper.GetString("timezone"),
 	}
 
-	v := viewBubble.NewIssueList(project, server, total, epics, fetchAllEpics, nil, displayFormat)
+	tabs := []*viewBubble.TabConfig{
+		{
+			Name:        "Epics",
+			FetchIssues: fetchAllEpics,
+			FetchEpics:  fetchAllEpics,
+		},
+	}
+	v := viewBubble.NewIssueList(project, server, total, tabs, displayFormat)
 	cmdutil.ExitIfError(v.RunView())
 }
 

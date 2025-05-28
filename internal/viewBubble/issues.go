@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
@@ -21,24 +22,33 @@ import (
 
 var _ = log.Fatal
 
+// TabConfig holds configuration for a single tab
+type TabConfig struct {
+	Name        string
+	FetchIssues func() ([]*jira.Issue, int)
+	FetchEpics  func() ([]*jira.Issue, int)
+}
+
 // IssueList is a list view for issues.
 type IssueList struct {
 	Total   int
 	Project string
 	Server  string
 
-	FetchAllIssues func() ([]*jira.Issue, int)
-	FetchAllEpics  func() ([]*jira.Issue, int)
+	// Tab management
+	tabs      []*TabConfig
+	activeTab int
 
-	table *tuiBubble.Table
-	err   error
+	// Per-tab state
+	tables           []*tuiBubble.Table
+	issueDetailViews []IssueModel
+
+	err error
 
 	rawWidth  int
 	rawHeight int
 
 	fuzzy *FuzzySelector
-
-	issueDetailView IssueModel
 
 	// Status message fields
 	statusMessage string
@@ -48,9 +58,7 @@ type IssueList struct {
 func NewIssueList(
 	project, server string,
 	total int,
-	issues []*jira.Issue,
-	fetchIssuesWithArgs func() ([]*jira.Issue, int),
-	fetchAllEpics func() ([]*jira.Issue, int),
+	tabs []*TabConfig,
 	displayFormat tuiBubble.DisplayFormat,
 ) *IssueList {
 	const tableHelpText = "j/↓ k/↑: down up, CTRL+e/y scroll  •  n: new issue  •  u: copy URL  •  c: add comment  •  CTRL+r: refresh  •  CTRL+p: assign to epic  •  enter: select/Open  •  q/ESC/CTRL+c: quit"
@@ -58,21 +66,39 @@ func NewIssueList(
 	splitViewHelpText := tableHelpText
 
 	l := &IssueList{
-		Project:        project,
-		Server:         server,
-		Total:          total,
-		FetchAllIssues: fetchIssuesWithArgs,
-		FetchAllEpics:  fetchAllEpics,
+		Project:          project,
+		Server:           server,
+		Total:            total,
+		tabs:             tabs,
+		activeTab:        0,
+		tables:           make([]*tuiBubble.Table, len(tabs)),
+		issueDetailViews: make([]IssueModel, len(tabs)),
 	}
 
-	table := tuiBubble.NewTable(
-		tuiBubble.WithTableHelpText(splitViewHelpText),
-	)
-	table.SetDisplayFormat(displayFormat)
-	table.SetIssueData(issues)
-	l.table = table
+	wg := sync.WaitGroup{}
 
-	l.issueDetailView = NewIssueFromSelected(l)
+	for i, tabConfig := range tabs {
+		wg.Add(1)
+		go func(index int, config *TabConfig) {
+			defer wg.Done()
+			table := tuiBubble.NewTable(
+				tuiBubble.WithTableHelpText(splitViewHelpText),
+			)
+			table.SetDisplayFormat(displayFormat)
+
+			issues, _ := config.FetchIssues()
+			table.SetIssueData(issues)
+
+			l.tables[index] = table
+			l.issueDetailViews[index] = NewIssueModel(l.Server)
+			if len(issues) > 0 {
+				m, _ := l.issueDetailViews[index].Update(table.GetSelectedIssueShift(0))
+				l.issueDetailViews[index] = m
+			}
+		}(i, tabConfig)
+	}
+
+	wg.Wait()
 
 	return l
 }
@@ -108,15 +134,31 @@ func (l *IssueList) Init() tea.Cmd {
 
 func (l *IssueList) forceRedrawCmd() tea.Cmd {
 	return func() tea.Msg {
-		return selectedIssueMsg{issue: l.table.GetSelectedIssueShift(0)}
+		return selectedIssueMsg{issue: l.getCurrentTable().GetSelectedIssueShift(0)}
 	}
+}
+
+// getCurrentTable returns the table for the active tab
+func (l *IssueList) getCurrentTable() *tuiBubble.Table {
+	return l.tables[l.activeTab]
+}
+
+// getCurrentIssueDetailView returns the issue detail view for the active tab
+func (l *IssueList) getCurrentIssueDetailView() IssueModel {
+	return l.issueDetailViews[l.activeTab]
+}
+
+// getCurrentTabConfig returns the tab config for the active tab
+func (l *IssueList) getCurrentTabConfig() *TabConfig {
+	return l.tabs[l.activeTab]
 }
 
 // prefetchIssuesCmd creates a command to pre-fetch the first N issues
 func (l *IssueList) prefetchIssuesCmd() tea.Cmd {
 	return func() tea.Msg {
-		// Pre-fetch first N issues in the background
-		go l.table.PrefetchTopIssues()
+		for _, table := range l.tables {
+			go table.PrefetchTopIssues()
+		}
 		return nil
 	}
 }
@@ -267,13 +309,10 @@ func (l *IssueList) assignToEpic(epicKey string, issue *jira.Issue) tea.Cmd {
 	})
 }
 
-func (l *IssueList) safeIssueUpdate(msg tea.Msg) (IssueModel, tea.Cmd) {
-	m, cmd := l.issueDetailView.Update(msg)
-	if v, ok := m.(IssueModel); ok {
-		return v, cmd
-	} else {
-		panic("expected IssueModel from some of the issue model updates")
-	}
+func (l *IssueList) updateCurrentIssue(msg tea.Msg) tea.Cmd {
+	m, cmd := l.getCurrentIssueDetailView().Update(msg)
+	l.issueDetailViews[l.activeTab] = m
+	return cmd
 }
 
 // Update handles user input and updates the model state.
@@ -288,23 +327,32 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		var cmds []tea.Cmd
 
-		tableHeight := int(0.4 * float32(l.rawHeight))
-		previewHeight := l.rawHeight - tableHeight
+		// Reserve 2 rows for tabs only if there are multiple tabs
+		tabHeight := 0
+		if len(l.tabs) > 1 {
+			tabHeight = 2
+		}
+		tableHeight := int(0.4 * float32(l.rawHeight-tabHeight))
+		previewHeight := l.rawHeight - tableHeight - tabHeight
 
-		l.table, cmd = l.table.Update(tuiBubble.WidgetSizeMsg{
-			Height: tableHeight,
-			Width:  l.rawWidth,
-		})
-		cmds = append(cmds, cmd)
+		// Update all tables and issue detail views
+		for key := range l.tables {
+			l.tables[key], cmd = l.tables[key].Update(tuiBubble.WidgetSizeMsg{
+				Height: tableHeight,
+				Width:  l.rawWidth,
+			})
+			cmds = append(cmds, cmd)
 
-		l.issueDetailView, cmd = l.safeIssueUpdate(tuiBubble.WidgetSizeMsg{
-			Height: previewHeight,
-			Width:  l.rawWidth,
-		})
-		cmds = append(cmds, cmd)
+			l.issueDetailViews[key], cmd = l.issueDetailViews[key].Update(tuiBubble.WidgetSizeMsg{
+				Height: previewHeight,
+				Width:  l.rawWidth,
+			})
+			cmds = append(cmds, cmd)
+		}
+
 		return l, tea.Batch(cmds...)
 	case selectedIssueMsg:
-		l.issueDetailView, cmd = l.safeIssueUpdate(msg)
+		cmd := l.updateCurrentIssue(msg.issue)
 		return l, cmd
 	case editorFinishedMsg, issueMovedMsg, issueAssignedToEpic:
 		l.FetchAndRefreshCache()
@@ -320,37 +368,52 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch item := msg.item.(type) {
 		case *jira.Issue:
 			epic := item
-			return l, l.assignToEpic(epic.Key, l.table.GetSelectedIssueShift(0))
+			return l, l.assignToEpic(epic.Key, l.getCurrentTable().GetSelectedIssueShift(0))
 		}
 	case tea.KeyMsg:
+		currentTable := l.getCurrentTable()
+		if currentTable != nil {
+			if currentTable.SorterState == tuiBubble.SorterFiltering {
+				l.tables[l.activeTab], cmd = currentTable.Update(msg)
+				return l, cmd
+			}
 
-		if l.table.SorterState == tuiBubble.SorterFiltering {
-			l.table, cmd = l.table.Update(msg)
-			return l, cmd
-		}
-
-		if l.table.SorterState == tuiBubble.SorterActive && msg.String() == "esc" {
-			l.table, cmd = l.table.Update(msg)
-			return l, cmd
+			if currentTable.SorterState == tuiBubble.SorterActive && msg.String() == "esc" {
+				l.tables[l.activeTab], cmd = currentTable.Update(msg)
+				return l, cmd
+			}
 		}
 
 		switch msg.String() {
 		case "ctrl+c", "q", "esc":
 			return l, tea.Quit
+		case "right", "l":
+			if len(l.tabs) > 1 {
+				l.activeTab = (l.activeTab + 1) % len(l.tabs)
+				return l, l.forceRedrawCmd()
+			}
+		case "left", "h":
+			if len(l.tabs) > 1 {
+				l.activeTab = (l.activeTab - 1 + len(l.tabs)) % len(l.tabs)
+				return l, l.forceRedrawCmd()
+			}
 		case "up", "k":
-			var cmd1, cmd2 tea.Cmd
-			l.issueDetailView, cmd1 = l.safeIssueUpdate(l.table.GetSelectedIssueShift(-1))
-			l.table, cmd2 = l.table.Update(msg)
+			currentTable := l.getCurrentTable()
+			cmd1 := l.updateCurrentIssue(currentTable.GetSelectedIssueShift(-1))
+			var cmd2 tea.Cmd
+			l.tables[l.activeTab], cmd2 = currentTable.Update(msg)
 			return l, tea.Batch(cmd1, cmd2)
 		case "down", "j":
-			var cmd1, cmd2 tea.Cmd
-			l.issueDetailView, cmd1 = l.safeIssueUpdate(l.table.GetSelectedIssueShift(+1))
-			l.table, cmd2 = l.table.Update(msg)
+			currentTable := l.getCurrentTable()
+			cmd1 := l.updateCurrentIssue(currentTable.GetSelectedIssueShift(+1))
+			var cmd2 tea.Cmd
+			l.tables[l.activeTab], cmd2 = currentTable.Update(msg)
+			// debug(l.issueDetailViews[l.activeTab].Data.Fields.Summary)
 			return l, tea.Batch(cmd1, cmd2)
-
 		case "ctrl+p":
 			// I hate golang, why tf []concrete -> []interface is invalid when concrete satisfies interface...
-			epics, _ := l.FetchAllEpics()
+			tabConfig := l.getCurrentTabConfig()
+			epics, _ := tabConfig.FetchEpics()
 			listItems := []list.Item{}
 			for _, epic := range epics {
 				listItems = append(listItems, epic)
@@ -358,36 +421,36 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			fz := NewFuzzySelectorFrom(l, l.rawWidth, l.rawHeight, listItems)
 			return fz, nil
 		case "m":
-			return l, l.moveIssue(l.table.GetSelectedIssueShift(0))
+			return l, l.moveIssue(l.getCurrentTable().GetSelectedIssueShift(0))
 		case "e":
-			return l, l.editIssue(l.table.GetSelectedIssueShift(0))
+			return l, l.editIssue(l.getCurrentTable().GetSelectedIssueShift(0))
 		case "u":
-			iss := l.table.GetSelectedIssueShift(0)
+			iss := l.getCurrentTable().GetSelectedIssueShift(0)
 			url := fmt.Sprintf("%s/browse/%s", l.Server, iss.Key)
 			copyToClipboard(url)
 			return l, l.setStatusMessage(fmt.Sprintf("Current issue FQDN copied: %s", url))
 		case "enter":
-			iss := l.table.GetSelectedIssueShift(0)
+			iss := l.getCurrentTable().GetSelectedIssueShift(0)
 			cmdutil.Navigate(l.Server, iss.Key)
 			return l, nil
 		case "n":
 			return l, l.createIssue()
 		case "c":
-			return l, l.addComment(l.table.GetSelectedIssueShift(0))
+			return l, l.addComment(l.getCurrentTable().GetSelectedIssueShift(0))
 		case "ctrl+r":
-			var cmd1, cmd2 tea.Cmd
-			l.issueDetailView, cmd1 = l.safeIssueUpdate(l.table.GetSelectedIssueShift(0))
-			l.table, cmd2 = l.table.Update(msg)
+			currentTable := l.getCurrentTable()
+			cmd1 := l.updateCurrentIssue(currentTable.GetSelectedIssueShift(0))
+			var cmd2 tea.Cmd
+			l.tables[l.activeTab], cmd2 = currentTable.Update(msg)
 			return l, tea.Batch(cmd1, cmd2)
 
 		// Forwarding to issue:
-		case "tab", "ctrl+e", "ctrl+y":
-			l.issueDetailView, cmd = l.safeIssueUpdate(msg)
+		case "ctrl+e", "ctrl+y", "tab":
+			cmd := l.updateCurrentIssue(msg)
 			return l, cmd
-
 		// Forwarding straight to table:
 		case "/":
-			l.table, cmd = l.table.Update(msg)
+			l.tables[l.activeTab], cmd = l.getCurrentTable().Update(msg)
 			return l, l.forceRedrawCmd()
 		}
 	}
@@ -396,35 +459,60 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (l *IssueList) FetchAndRefreshCache() {
-	issues, _ := l.FetchAllIssues()
-	l.table.RefreshCache(issues)
+	tabConfig := l.getCurrentTabConfig()
+	issues, _ := tabConfig.FetchIssues()
+	currentTable := l.getCurrentTable()
+	currentTable.RefreshCache(issues)
 }
 
 // View renders the IssueList.
 func (l *IssueList) View() string {
+	if len(l.tabs) == 0 {
+		return "No tabs configured"
+	}
+
+	currentTable := l.getCurrentTable()
+	if currentTable == nil {
+		panic("AAA")
+	}
+	currentView := l.getCurrentIssueDetailView()
+
 	// Update footer text based on status message
 	if l.statusMessage != "" {
-		l.table.SetFooterText(l.statusMessage)
+		currentTable.SetFooterText(l.statusMessage)
 	} else {
-		l.table.SetDefaultFooterText()
+		currentTable.SetDefaultFooterText()
 	}
 
 	// Get the raw table view
-	tableView := l.table.View()
-	detailView := l.issueDetailView.View()
+	tableView := currentTable.View()
+	detailView := currentView.View()
 
 	// Add a visual separator between views
 	separator := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240")).
 		Render(strings.Repeat("─", l.rawWidth))
 
-	// Join everything vertically
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		tableView,
-		separator,
-		detailView,
-	)
+	// Only render tabs if there's more than one
+	if len(l.tabs) > 1 {
+		tabView := l.renderTabs()
+		// Join everything vertically with tabs
+		return lipgloss.JoinVertical(
+			lipgloss.Left,
+			tabView,
+			tableView,
+			separator,
+			detailView,
+		)
+	} else {
+		// Join everything vertically without tabs
+		return lipgloss.JoinVertical(
+			lipgloss.Left,
+			tableView,
+			separator,
+			detailView,
+		)
+	}
 }
 
 func (l *IssueList) RunView() error {
@@ -434,6 +522,48 @@ func (l *IssueList) RunView() error {
 	}
 
 	return nil
+}
+
+// Tab styling (based on tabs.go example)
+func tabBorderWithBottom(left, middle, right string) lipgloss.Border {
+	border := lipgloss.RoundedBorder()
+	border.BottomLeft = left
+	border.Bottom = middle
+	border.BottomRight = right
+	return border
+}
+
+var (
+	inactiveTabBorder = tabBorderWithBottom("┬", "─", "┬")
+	activeTabBorder   = tabBorderWithBottom("┘", " ", "└")
+	highlightColor    = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
+	grayColor         = lipgloss.Color("240")
+	inactiveTabStyle  = lipgloss.NewStyle().Border(inactiveTabBorder, true).BorderForeground(grayColor).Padding(0, 1)
+	activeTabStyle    = lipgloss.NewStyle().Border(activeTabBorder, true).BorderForeground(highlightColor).Padding(0, 1)
+)
+
+// renderTabs renders the tab bar
+func (l *IssueList) renderTabs() string {
+	if len(l.tabs) == 0 {
+		return ""
+	}
+
+	var renderedTabs []string
+
+	for i, tabConfig := range l.tabs {
+		var style lipgloss.Style
+		isActive := i == l.activeTab
+		if isActive {
+			style = activeTabStyle
+		} else {
+			style = inactiveTabStyle
+		}
+		border, _, _, _, _ := style.GetBorder()
+		style = style.Border(border).BorderBottom(false)
+		renderedTabs = append(renderedTabs, style.Render(tabConfig.Name))
+	}
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, renderedTabs...)
 }
 
 // copyToClipboard copies text to clipboard.

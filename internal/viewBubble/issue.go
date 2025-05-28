@@ -58,8 +58,6 @@ type IssueModel struct {
 	Display tuiBubble.DisplayFormat
 	Options IssueOption
 
-	ListView *IssueList
-
 	// Original window dimensions
 	RawWidth  int
 	RawHeight int
@@ -518,7 +516,7 @@ func (iss IssueModel) Init() tea.Cmd {
 }
 
 // Update handles user input and updates the model state.
-func (iss IssueModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (iss IssueModel) Update(msg tea.Msg) (IssueModel, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
@@ -534,13 +532,12 @@ func (iss IssueModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		iss.renderedLines = nil
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "q", "esc":
-			return iss.ListView, cmd
 		case "ctrl+e":
 			iss.scrollDown()
 		case "ctrl+y":
 			iss.scrollUp()
 		case "tab":
+			debug("tab tab")
 			if iss.currentlyHighlightedLinkPos == iss.nLinks-1 {
 				// set to "no links selected"
 				iss.currentlyHighlightedLinkPos = -1
@@ -634,16 +631,15 @@ func (iss *IssueModel) prepareRenderedLines() {
 	iss.renderedLines = strings.Split(out, "\n")
 }
 
-func NewIssueFromSelected(l *IssueList) IssueModel {
+func NewIssueModel(server string) IssueModel {
 	iss := IssueModel{
-		Server:                            l.Server,
-		Data:                              l.table.GetSelectedIssueShift(0),
+		Server:                            server,
+		Data:                              nil,
 		Options:                           IssueOption{NumComments: 10},
-		ListView:                          l,
 		currentlyHighlightedLinkPos:       -1,
 		currentlyHighlightedLinkCountdown: -1,
 	}
-	iss.countLinks()
+
 	iss.calculateViewportDimensions()
 	return iss
 }
@@ -675,6 +671,11 @@ func (iss *IssueModel) getVisibleLines() string {
 
 // View renders the IssueList.
 func (iss IssueModel) View() string {
+	// Show placeholder if no issue data is available
+	if iss.Data == nil {
+		return "No issue selected yet"
+	}
+
 	iss.prepareRenderedLines()
 
 	if iss.contentHeight <= 0 {

@@ -19,6 +19,14 @@ import (
 
 var _ = log.Fatal
 
+// ListTabConfig represents configuration for a single tab in issue list
+type ListTabConfig struct {
+	Name     string   `mapstructure:"name"`
+	Project  string   `mapstructure:"project"`
+	Assignee string   `mapstructure:"assignee"`
+	Status   []string `mapstructure:"status"`
+}
+
 const (
 	helpText = `List lists issues in a given project.
 
@@ -82,6 +90,48 @@ func List(cmd *cobra.Command, args []string) {
 	loadList(cmd, args)
 }
 
+// MakeFetcherFromTabConfig creates a fetcher function from a tab configuration
+func MakeFetcherFromTabConfig(baseProject string, baseFlags query.FlagParser, tabConfig ListTabConfig, debug bool) func() ([]*jira.Issue, int) {
+	return func() ([]*jira.Issue, int) {
+		// Use the tab's project if specified, otherwise use base project
+		project := baseProject
+		if tabConfig.Project != "" {
+			project = tabConfig.Project
+		}
+
+		q, err := query.NewIssue(project, baseFlags)
+		if err != nil {
+			cmdutil.ExitIfError(err)
+		}
+
+		// Override query parameters based on tab config
+		if tabConfig.Assignee != "" {
+			q.Params().Assignee = tabConfig.Assignee
+		}
+		if len(tabConfig.Status) > 0 {
+			q.Params().Status = tabConfig.Status
+		}
+
+		issues, total, err := func() ([]*jira.Issue, int, error) {
+			s := cmdutil.Info("Fetching issues...")
+			defer s.Stop()
+
+			if debug {
+				log.Fatal(fmt.Sprintf("%+v\n", q.Params()))
+			}
+			resp, err := api.ProxySearch(api.DefaultClient(debug), q.Get(), q.Params().From, q.Params().Limit)
+			if err != nil {
+				return nil, 0, err
+			}
+
+			return resp.Issues, resp.Total, nil
+		}()
+
+		cmdutil.ExitIfError(err)
+		return issues, total
+	}
+}
+
 func MakeFetcherFromQuery(q *query.Issue, debug bool) func() ([]*jira.Issue, int) {
 	return func() ([]*jira.Issue, int) {
 		issues, total, err := func() ([]*jira.Issue, int, error) {
@@ -141,18 +191,11 @@ func loadList(cmd *cobra.Command, args []string) {
 		cmdutil.ExitIfError(cmd.Flags().Set("jql", searchQuery))
 	}
 
-	q, err := query.NewIssue(project, cmd.Flags())
+	// Read tab configuration from viper
+	var tabConfigs []ListTabConfig
+	err = viper.UnmarshalKey("bubble.list.tabs", &tabConfigs)
 	if err != nil {
 		cmdutil.ExitIfError(err)
-	}
-	fetchIssuesWithArgs := MakeFetcherFromQuery(q, debug)
-
-	issues, total := fetchIssuesWithArgs()
-
-	if total == 0 {
-		fmt.Println()
-		cmdutil.Failed("No result found for given query in project %q", project)
-		return
 	}
 
 	plain, err := cmd.Flags().GetBool("plain")
@@ -170,15 +213,6 @@ func loadList(cmd *cobra.Command, args []string) {
 	columns, err := cmd.Flags().GetString("columns")
 	cmdutil.ExitIfError(err)
 
-	projectType := viper.GetString("project.type")
-	epicQ, err := query.NewIssue(project, cmd.Flags())
-	if projectType == jira.ProjectTypeNextGen {
-		epicQ.Params().IssueType = viper.GetString("next_gen.epic_task_name")
-	}
-	epicQ.Params().Status = []string{}
-	epicQ.Params().Assignee = ""
-	fetchAllEpics := MakeFetcherFromQuery(epicQ, debug)
-
 	d := tuiBubble.DisplayFormat{
 		Plain:        plain,
 		NoHeaders:    noHeaders,
@@ -193,7 +227,56 @@ func loadList(cmd *cobra.Command, args []string) {
 		Timezone: viper.GetString("timezone"),
 	}
 
-	v := viewBubble.NewIssueList(project, server, total, issues, fetchIssuesWithArgs, fetchAllEpics, d)
+	projectType := viper.GetString("project.type")
+	epicQ, err := query.NewIssue(project, cmd.Flags())
+	if projectType == jira.ProjectTypeNextGen {
+		epicQ.Params().IssueType = viper.GetString("next_gen.epic_task_name")
+	}
+	epicQ.Params().Status = []string{}
+	epicQ.Params().Assignee = ""
+	fetchAllEpics := MakeFetcherFromQuery(epicQ, debug)
+
+	var tabs []*viewBubble.TabConfig
+	var total int
+
+	if len(tabConfigs) <= 1 {
+		q, err := query.NewIssue(project, cmd.Flags())
+		if err != nil {
+			cmdutil.ExitIfError(err)
+		}
+		fetchIssuesWithArgs := MakeFetcherFromQuery(q, debug)
+
+		_, total = fetchIssuesWithArgs()
+
+		if total == 0 {
+			fmt.Println()
+			cmdutil.Failed("No result found for given query in project %q", project)
+			return
+		}
+
+		tabs = []*viewBubble.TabConfig{
+			{
+				Name:        "Issues",
+				FetchIssues: fetchIssuesWithArgs,
+				FetchEpics:  fetchAllEpics,
+			},
+		}
+	} else {
+		tabs = make([]*viewBubble.TabConfig, len(tabConfigs))
+		total = 0
+
+		for i, tabConfig := range tabConfigs {
+			fetchIssues := MakeFetcherFromTabConfig(project, cmd.Flags(), tabConfig, debug)
+
+			tabs[i] = &viewBubble.TabConfig{
+				Name:        tabConfig.Name,
+				FetchIssues: fetchIssues,
+				FetchEpics:  fetchAllEpics,
+			}
+		}
+	}
+
+	v := viewBubble.NewIssueList(project, server, total, tabs, d)
 
 	cmdutil.ExitIfError(v.RunView())
 }
