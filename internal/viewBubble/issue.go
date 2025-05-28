@@ -55,7 +55,7 @@ type IssueOption struct {
 type IssueModel struct {
 	Server  string
 	Data    *jira.Issue
-	Display DisplayFormat
+	Display tuiBubble.DisplayFormat
 	Options IssueOption
 
 	ListView *IssueList
@@ -279,7 +279,7 @@ func (i *IssueModel) colorizeSelected(input string) string {
 			i.currentlyHighlightedLinkText = linkText
 			i.currentlyHighlightedLinkURL = linkURL
 			go func() {
-				// takes a while so I'd like it copied async
+				// can take a while (hundred ms) so I'd like it copied async
 				copyToClipboard(linkURL)
 			}()
 			i.uniqueLinkTitleReplacement = replacement
@@ -634,14 +634,12 @@ func (iss *IssueModel) prepareRenderedLines() {
 	iss.renderedLines = strings.Split(out, "\n")
 }
 
-func NewIssueFromSelected(l *IssueList, width, height int) IssueModel {
+func NewIssueFromSelected(l *IssueList) IssueModel {
 	iss := IssueModel{
 		Server:                            l.Server,
-		Data:                              l.GetSelectedIssueShift(0),
+		Data:                              l.table.GetSelectedIssueShift(0),
 		Options:                           IssueOption{NumComments: 10},
 		ListView:                          l,
-		RawWidth:                          width,
-		RawHeight:                         height,
 		currentlyHighlightedLinkPos:       -1,
 		currentlyHighlightedLinkCountdown: -1,
 	}

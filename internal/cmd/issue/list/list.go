@@ -14,6 +14,7 @@ import (
 	"github.com/ankitpokhrel/jira-cli/internal/view"
 	"github.com/ankitpokhrel/jira-cli/internal/viewBubble"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
+	"github.com/ankitpokhrel/jira-cli/pkg/tuiBubble"
 )
 
 var _ = log.Fatal
@@ -178,28 +179,21 @@ func loadList(cmd *cobra.Command, args []string) {
 	epicQ.Params().Assignee = ""
 	fetchAllEpics := MakeFetcherFromQuery(epicQ, debug)
 
-	v := viewBubble.IssueList{
-		Project:        project,
-		Server:         server,
-		Total:          total,
-		Data:           issues,
-		DetailedCache:  make(map[string]*jira.Issue),
-		FetchAllIssues: fetchIssuesWithArgs,
-		FetchAllEpics:  fetchAllEpics,
-		Display: viewBubble.DisplayFormat{
-			Plain:        plain,
-			NoHeaders:    noHeaders,
-			NoTruncate:   noTruncate,
-			FixedColumns: fixedColumns,
-			Columns: func() []string {
-				if columns != "" {
-					return strings.Split(columns, ",")
-				}
-				return []string{}
-			}(),
-			Timezone: viper.GetString("timezone"),
-		},
+	d := tuiBubble.DisplayFormat{
+		Plain:        plain,
+		NoHeaders:    noHeaders,
+		NoTruncate:   noTruncate,
+		FixedColumns: fixedColumns,
+		Columns: func() []string {
+			if columns != "" {
+				return strings.Split(columns, ",")
+			}
+			return []string{}
+		}(),
+		Timezone: viper.GetString("timezone"),
 	}
+
+	v := viewBubble.NewIssueList(project, server, total, issues, fetchIssuesWithArgs, fetchAllEpics, d)
 
 	cmdutil.ExitIfError(v.RunView())
 }

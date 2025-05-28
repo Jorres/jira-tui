@@ -5,14 +5,10 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/fatih/color"
 	"github.com/mgutz/ansi"
-
-	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
-	"github.com/ankitpokhrel/jira-cli/pkg/tuiBubble"
 )
 
 const (
@@ -37,56 +33,12 @@ const (
 	Press 'q' / ESC / CTRL+C to quit.`
 )
 
-// ValidIssueColumns returns valid columns for issue list.
-func ValidIssueColumns() []string {
-	return []string{
-		fieldType,
-		fieldKey,
-		fieldSummary,
-		fieldStatus,
-		fieldAssignee,
-		fieldReporter,
-		fieldPriority,
-		fieldResolution,
-		fieldCreated,
-		fieldUpdated,
-		fieldLabels,
-	}
-}
-
-// ValidSprintColumns returns valid columns for sprint list.
-func ValidSprintColumns() []string {
-	return []string{
-		fieldID,
-		fieldName,
-		fieldStartDate,
-		fieldEndDate,
-		fieldCompleteDate,
-		fieldState,
-	}
-}
-
 // MDRenderer constructs markdown renderer.
 func MDRenderer() (*glamour.TermRenderer, error) {
 	return glamour.NewTermRenderer(
 		glamour.WithEnvironmentConfig(),
 		glamour.WithWordWrap(wordWrap),
 	)
-}
-
-func issueKeyFromTuiData(r int, d interface{}) string {
-	var path string
-
-	switch data := d.(type) {
-	case tuiBubble.TableData:
-		path = data.Get(r, data.GetIndex(fieldKey))
-	}
-
-	return path
-}
-
-func jiraURLFromTuiData(server string, r int, d interface{}) string {
-	return cmdutil.GenerateServerBrowseURL(server, issueKeyFromTuiData(r, d))
 }
 
 func unescape(s string) string {
@@ -136,24 +88,4 @@ func max(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func formatDateTime(dt, format, tz string) string {
-	t, err := time.Parse(format, dt)
-	if err != nil {
-		return dt
-	}
-	if tz == "" {
-		return t.Format("2006-01-02 15:04:05")
-	}
-	loc, err := time.LoadLocation(tz)
-	if err != nil {
-		return dt
-	}
-	return t.In(loc).Format("2006-01-02 15:04:05")
-}
-
-func prepareTitle(text string) string {
-	text = strings.TrimSpace(text)
-	return text
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
 	"github.com/ankitpokhrel/jira-cli/internal/query"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
+	"github.com/ankitpokhrel/jira-cli/pkg/tuiBubble"
 
 	"github.com/ankitpokhrel/jira-cli/internal/viewBubble"
 )
@@ -126,27 +127,21 @@ func singleEpicView(cmd *cobra.Command, flags query.FlagParser, key, project, pr
 	columns, err := flags.GetString("columns")
 	cmdutil.ExitIfError(err)
 
-	v := viewBubble.IssueList{
-		Project:        project,
-		Server:         server,
-		Total:          total,
-		Data:           issues,
-		FetchAllIssues: fetchAllIssuesOfEpic,
-		DetailedCache:  make(map[string]*jira.Issue),
-		Display: viewBubble.DisplayFormat{
-			Plain:        plain,
-			NoHeaders:    noHeaders,
-			NoTruncate:   noTruncate,
-			FixedColumns: fixedColumns,
-			Columns: func() []string {
-				if columns != "" {
-					return strings.Split(columns, ",")
-				}
-				return []string{}
-			}(),
-			Timezone: viper.GetString("timezone"),
-		},
+	displayFormat := tuiBubble.DisplayFormat{
+		Plain:        plain,
+		NoHeaders:    noHeaders,
+		NoTruncate:   noTruncate,
+		FixedColumns: fixedColumns,
+		Columns: func() []string {
+			if columns != "" {
+				return strings.Split(columns, ",")
+			}
+			return []string{}
+		}(),
+		Timezone: viper.GetString("timezone"),
 	}
+
+	v := viewBubble.NewIssueList(project, server, total, issues, fetchAllIssuesOfEpic, nil, displayFormat)
 
 	cmdutil.ExitIfError(v.RunView())
 }
@@ -186,21 +181,16 @@ func epicExplorerView(cmd *cobra.Command, flags query.FlagParser, project, proje
 	if err != nil {
 		cmdutil.ExitIfError(err)
 	}
-	v := viewBubble.IssueList{
-		Total:          total,
-		Project:        project,
-		Server:         server,
-		Data:           epics,
-		FetchAllIssues: fetchAllEpics,
-		DetailedCache:  make(map[string]*jira.Issue),
-		Display: viewBubble.DisplayFormat{
-			Plain:        plain,
-			NoHeaders:    noHeaders,
-			NoTruncate:   noTruncate,
-			FixedColumns: fixedColumns,
-			Timezone:     viper.GetString("timezone"),
-		},
+
+	displayFormat := tuiBubble.DisplayFormat{
+		Plain:        plain,
+		NoHeaders:    noHeaders,
+		NoTruncate:   noTruncate,
+		FixedColumns: fixedColumns,
+		Timezone:     viper.GetString("timezone"),
 	}
+
+	v := viewBubble.NewIssueList(project, server, total, epics, fetchAllEpics, nil, displayFormat)
 	cmdutil.ExitIfError(v.RunView())
 }
 

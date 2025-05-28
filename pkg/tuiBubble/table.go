@@ -3,45 +3,51 @@ package tuiBubble
 import (
 	"fmt"
 	"log"
+	"os"
 	"strings"
+	"sync"
 
+	"github.com/ankitpokhrel/jira-cli/api"
+	"github.com/ankitpokhrel/jira-cli/pkg/jira"
+	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter/issue"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/spf13/viper"
 )
+
+func debug(v ...any) {
+	f, _ := os.OpenFile("/home/jorres/hobbies/jira-cli/debug.log", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	for _, val := range v {
+		fmt.Fprintln(f, val)
+	}
+	f.Close()
+}
 
 var _ = log.Fatal
 
+const (
+	SorterInactive int = iota
+	SorterFiltering
+	SorterActive
+)
+
+const (
+	sorterHeight = 3
+)
+
+// DisplayFormat is a issue display type.
+type DisplayFormat struct {
+	Plain        bool
+	NoHeaders    bool
+	NoTruncate   bool
+	FixedColumns uint
+	Columns      []string
+	Timezone     string
+}
+
 // TableData is the data to be displayed in a table.
 type TableData [][]string
-
-// Get returns the value of the cell at the given row and column.
-func (td TableData) Get(r, c int) string {
-	if r >= 0 && r < len(td) && c >= 0 && c < len(td[r]) {
-		return td[r][c]
-	}
-	return ""
-}
-
-// GetIndex returns the index of the specified column.
-func (td TableData) GetIndex(key string) int {
-	if len(td) == 0 {
-		return -1
-	}
-	for i, v := range td[0] {
-		if strings.EqualFold(v, key) {
-			return i
-		}
-	}
-	return -1
-}
-
-// Update updates the data at given row and column.
-func (td TableData) Update(r, c int, val string) {
-	if r >= 0 && r < len(td) && c >= 0 && c < len(td[r]) {
-		td[r][c] = val
-	}
-}
 
 // TableStyle sets the style of the table.
 type TableStyle struct {
@@ -50,35 +56,40 @@ type TableStyle struct {
 	SelectionTextIsBold bool
 }
 
-// SelectedFunc is fired when a user press enter key in the table cell.
-type SelectedFunc func(row, column int, data interface{})
-
-// CopyFunc is fired when a user press 'c' character in the table cell.
-type CopyFunc func(row, column int, data interface{})
-
 // Table is a bubble tea model for rendering tables.
 type Table struct {
-	table        table.Model
-	tableData    TableData
-	style        TableStyle
-	footerText   string
-	helpText     string
-	selectedFunc SelectedFunc
-	copyFunc     CopyFunc
-	showHelp     bool
-	baseStyle    lipgloss.Style
-	helpStyle    lipgloss.Style
-	footerStyle  lipgloss.Style
+	table       table.Model
+	style       TableStyle
+	footerText  string
+	helpText    string
+	showHelp    bool
+	baseStyle   lipgloss.Style
+	helpStyle   lipgloss.Style
+	footerStyle lipgloss.Style
 
 	rawWidth       int
 	rawHeight      int
 	viewportWidth  int
 	viewportHeight int
 
+	SorterState  int
+	sorterHeight int
+	sorterText   string
+	sorterStyle  lipgloss.Style
+
 	footerHeight int
 	helpHeight   int
 
 	err error
+
+	displayFormat DisplayFormat
+
+	allIssues      []*jira.Issue
+	filteredIssues []*jira.Issue
+	issueCache     map[string]*jira.Issue
+
+	// Data provider for getting table data
+	dataProvider DataProvider
 }
 
 type WidgetSizeMsg struct {
@@ -103,98 +114,20 @@ func NewTable(opts ...TableOption) *Table {
 		Padding(1, 0, 0, 2).
 		Foreground(lipgloss.Color("240"))
 
+	sorterStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(0, 1).
+		Height(1)
+
 	t := &Table{
-		baseStyle:   baseStyle,
-		footerStyle: footerStyle,
-		helpStyle:   helpStyle,
+		baseStyle:    baseStyle,
+		footerStyle:  footerStyle,
+		helpStyle:    helpStyle,
+		sorterStyle:  sorterStyle,
+		sorterHeight: sorterHeight,
 	}
 
-	for _, opt := range opts {
-		opt(t)
-	}
-
-	return t
-}
-
-// WithTableStyle sets the style of the table.
-func WithTableStyle(style TableStyle) TableOption {
-	return func(t *Table) {
-		t.style = style
-	}
-}
-
-// WithTableFooterText sets footer text that is displayed after the table.
-func WithTableFooterText(text string) TableOption {
-	return func(t *Table) {
-		t.footerText = text
-	}
-}
-
-// WithTableHelpText sets the help text for the view.
-func WithTableHelpText(text string) TableOption {
-	return func(t *Table) {
-		t.helpText = text
-	}
-}
-
-// WithSelectedFunc sets a func that is triggered when table row is selected.
-func WithSelectedFunc(fn SelectedFunc) TableOption {
-	return func(t *Table) {
-		t.selectedFunc = fn
-	}
-}
-
-// WithCopyFunc sets a func that is triggered when a user press 'c'.
-func WithCopyFunc(fn CopyFunc) TableOption {
-	return func(t *Table) {
-		t.copyFunc = fn
-	}
-}
-
-// Init initializes the table model.
-func (t *Table) Init() tea.Cmd {
-	return nil
-}
-
-func (t *Table) columnWidth() (int, int) {
-	numColumns := len(t.tableData[0])
-
-	availableSpace := t.viewportWidth
-
-	availableSpace -= 2 * numColumns // this was the most difficult part. Each column is really ' ' + width + ' ', there is an implicit padding of 2 per column
-
-	colWidth := availableSpace / numColumns
-	if colWidth < 10 {
-		colWidth = 10 // Minimum column width
-	}
-
-	remainder := availableSpace - colWidth*numColumns
-	return colWidth, remainder
-}
-
-// Update handles user input and updates the table model state.
-func (t *Table) Update(msg tea.Msg) (*Table, tea.Cmd) {
-	switch msg := msg.(type) {
-	case WidgetSizeMsg:
-		t.rawWidth = msg.Width
-		t.rawHeight = msg.Height
-
-		t.footerHeight = 4
-		t.helpHeight = 4
-
-		t.viewportWidth = msg.Width - 2 // table external border
-		t.viewportHeight = msg.Height - t.footerHeight - t.helpHeight
-	}
-	var cmd tea.Cmd
-	t.table, cmd = t.table.Update(msg)
-	return t, cmd
-}
-
-func (t *Table) SetData(data TableData) {
-	t.tableData = data
-}
-
-func (t *Table) SetUnderlyingTable() {
 	t.table = table.New(
 		table.WithFocused(true),
 	)
@@ -226,16 +159,186 @@ func (t *Table) SetUnderlyingTable() {
 
 	st.Selected = st.Selected.Bold(t.style.SelectionTextIsBold)
 	t.table.SetStyles(st)
+
+	for _, opt := range opts {
+		opt(t)
+	}
+
+	return t
+}
+
+// WithTableStyle sets the style of the table.
+func WithTableStyle(style TableStyle) TableOption {
+	return func(t *Table) {
+		t.style = style
+	}
+}
+
+// WithTableHelpText sets the help text for the view.
+func WithTableHelpText(text string) TableOption {
+	return func(t *Table) {
+		t.helpText = text
+	}
+}
+
+// Init initializes the table model.
+func (t *Table) Init() tea.Cmd {
+	return nil
+}
+
+func (t *Table) columnWidth(data TableData) (int, int) {
+	if len(data) == 0 || len(data[0]) == 0 {
+		return 10, 0 // fallback
+	}
+	numColumns := len(data[0])
+
+	availableSpace := t.viewportWidth
+
+	availableSpace -= 2 * numColumns // this was the most difficult part. Each column is really ' ' + width + ' ', there is an implicit padding of 2 per column
+
+	colWidth := availableSpace / numColumns
+	if colWidth < 10 {
+		colWidth = 10 // Minimum column width
+	}
+
+	remainder := availableSpace - colWidth*numColumns
+	return colWidth, remainder
+}
+
+func (t *Table) filterTableData(filterText string) {
+	t.filteredIssues = []*jira.Issue{}
+
+	// Special case: when just entered search, we should not
+	// immediately yank all content from under user's nose
+	debug(filterText)
+	if filterText == "" {
+		t.filteredIssues = t.allIssues
+		return
+	}
+
+	for _, iss := range t.allIssues {
+		if strings.Contains(iss.Key, filterText) || strings.Contains(
+			strings.ToLower(iss.Fields.Summary),
+			strings.ToLower(filterText),
+		) {
+			t.filteredIssues = append(t.filteredIssues, iss)
+			debug("including ", iss.Key)
+		}
+	}
+}
+
+// Update handles user input and updates the table model state.
+func (t *Table) Update(msg tea.Msg) (*Table, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case WidgetSizeMsg:
+		t.rawWidth = msg.Width
+		t.rawHeight = msg.Height
+
+		t.footerHeight = 2
+		t.helpHeight = 2
+
+		t.viewportWidth = msg.Width - 2                                   // table external border
+		t.viewportHeight = msg.Height - t.footerHeight - t.helpHeight - 2 // table external border
+	case tea.KeyMsg:
+
+		if t.SorterState == SorterFiltering {
+			switch msg.String() {
+			case "enter":
+				t.SorterState = SorterActive
+				t.filterTableData(t.sorterText)
+				t.viewportHeight += sorterHeight
+				return t, cmd
+			case "esc", "ctrl+c":
+				t.SorterState = SorterInactive
+				t.viewportHeight += sorterHeight
+				return t, cmd
+			case "backspace":
+				if len(t.sorterText) > 0 {
+					t.sorterText = t.sorterText[:len(t.sorterText)-1]
+				}
+				t.filterTableData(t.sorterText)
+				return t, cmd
+			default:
+				t.sorterText = t.sorterText + msg.String()
+				t.filterTableData(t.sorterText)
+				return t, cmd
+			}
+		}
+
+		switch msg.String() {
+		case "/":
+			t.viewportHeight -= sorterHeight
+			t.sorterText = ""
+			t.SorterState = SorterFiltering
+			t.filterTableData(t.sorterText)
+			return t, cmd
+		}
+	}
+
+	t.table, cmd = t.table.Update(msg)
+	return t, cmd
+}
+
+// SetIssueData sets the issue data for the table
+func (t *Table) SetIssueData(issues []*jira.Issue) {
+	t.allIssues = issues
+	if t.issueCache == nil {
+		t.issueCache = make(map[string]*jira.Issue)
+	}
+}
+
+// GetIssueData returns the current issue data
+func (t *Table) GetIssueData() []*jira.Issue {
+	return t.allIssues
+}
+
+// GetDetailedCache returns the detailed issue cache
+func (t *Table) GetDetailedCache() map[string]*jira.Issue {
+	return t.issueCache
+}
+
+// SetDetailedCache sets the detailed issue cache
+func (t *Table) SetDetailedCache(cache map[string]*jira.Issue) {
+	t.issueCache = cache
+}
+
+// DataProvider interface allows external components to provide table data
+type DataProvider interface {
+	GetTableData() TableData
+}
+
+// SetDataProvider sets the data provider for the table
+func (t *Table) SetDataProvider(provider DataProvider) {
+	t.dataProvider = provider
 }
 
 // View renders the table.
 func (t *Table) View() string {
 	var s strings.Builder
+	var viewComponents []string
 
-	data := t.tableData
+	if t.SorterState == SorterFiltering {
+		headerContent := t.sorterStyle.Width(t.viewportWidth).Render("/" + t.sorterText)
+		viewComponents = append(viewComponents, headerContent)
+	}
+
+	var data TableData
+	if t.SorterState == SorterInactive {
+		data = t.makeTableData(t.allIssues)
+	} else {
+		data = t.makeTableData(t.filteredIssues)
+	}
+
+	if len(data) == 0 || len(data[0]) == 0 {
+		// Return empty view if no data
+		return ""
+	}
+
 	columns := make([]table.Column, len(data[0]))
 	for i, col := range data[0] {
-		oneWidth, rem := t.columnWidth()
+		oneWidth, rem := t.columnWidth(data)
 		columns[i] = table.Column{
 			Title: col,
 			Width: oneWidth,
@@ -261,7 +364,14 @@ func (t *Table) View() string {
 
 	// Render the table
 	tableView := t.baseStyle.Render(t.table.View())
-	s.WriteString(tableView)
+	viewComponents = append(viewComponents, tableView)
+
+	// Join header and table vertically
+	if len(viewComponents) > 1 {
+		s.WriteString(lipgloss.JoinVertical(lipgloss.Left, viewComponents...))
+	} else {
+		s.WriteString(tableView)
+	}
 
 	// Render the footer
 	if t.footerText != "" {
@@ -295,17 +405,202 @@ func (t *Table) GetCursorRow() int {
 	return t.table.Cursor()
 }
 
-// GetSelectedFunc returns the selectedFunc
-func (t *Table) GetSelectedFunc() SelectedFunc {
-	return t.selectedFunc
-}
-
-// GetCopyFunc returns the copyFunc
-func (t *Table) GetCopyFunc() CopyFunc {
-	return t.copyFunc
-}
-
 // SetFooterText updates the footer text dynamically
 func (t *Table) SetFooterText(text string) {
 	t.footerText = text
+}
+
+func (t *Table) SetDefaultFooterText() {
+	t.footerText = fmt.Sprintf("")
+}
+
+func (t *Table) SetDisplayFormat(displayFormat DisplayFormat) {
+	t.displayFormat = displayFormat
+}
+
+// data prepares the data for table view.
+func (t *Table) makeTableData(issues []*jira.Issue) TableData {
+	var data TableData
+
+	headers := t.header()
+	if !(t.displayFormat.Plain && t.displayFormat.NoHeaders) {
+		data = append(data, headers)
+	}
+	for _, iss := range issues {
+		data = append(data, t.assignColumns(headers, iss))
+	}
+
+	return data
+}
+
+// header prepares table headers.
+func (t *Table) header() []string {
+	if len(t.displayFormat.Columns) > 0 {
+		headers := []string{}
+		columnsMap := t.validColumnsMap()
+		for _, c := range t.displayFormat.Columns {
+			c = strings.ToUpper(c)
+			if _, ok := columnsMap[c]; ok {
+				headers = append(headers, strings.ToUpper(c))
+			}
+		}
+
+		return headers
+	}
+
+	return validIssueColumns()
+}
+
+// validColumnsMap returns a map of valid columns.
+func (*Table) validColumnsMap() map[string]struct{} {
+	columns := validIssueColumns()
+	out := make(map[string]struct{}, len(columns))
+
+	for _, c := range columns {
+		out[c] = struct{}{}
+	}
+
+	return out
+}
+
+// validIssueColumns returns valid columns for issue list.
+func validIssueColumns() []string {
+	return []string{
+		FieldKey,
+		FieldType,
+		FieldParent,
+		FieldSummary,
+		FieldStatus,
+		FieldAssignee,
+		FieldReporter,
+		// FieldResolution,
+		FieldCreated,
+		FieldPriority,
+		FieldUpdated,
+		// FieldLabels,
+	}
+}
+
+// assignColumns assigns columns for the issue.
+func (t *Table) assignColumns(columns []string, issue *jira.Issue) []string {
+	var bucket []string
+
+	for _, column := range columns {
+		switch column {
+		case FieldType:
+			bucket = append(bucket, issue.Fields.IssueType.Name)
+		case FieldKey:
+			bucket = append(bucket, issue.Key)
+		case FieldParent:
+			if issue.Fields.Parent != nil {
+				bucket = append(bucket, issue.Fields.Parent.Key)
+			} else {
+				bucket = append(bucket, "")
+			}
+		case FieldSummary:
+			bucket = append(bucket, prepareTitle(issue.Fields.Summary))
+		case FieldStatus:
+			bucket = append(bucket, issue.Fields.Status.Name)
+		case FieldAssignee:
+			bucket = append(bucket, issue.Fields.Assignee.Name)
+		case FieldReporter:
+			bucket = append(bucket, issue.Fields.Reporter.Name)
+		case FieldPriority:
+			bucket = append(bucket, issue.Fields.Priority.Name)
+		case FieldResolution:
+			bucket = append(bucket, issue.Fields.Resolution.Name)
+		case FieldCreated:
+			bucket = append(bucket, formatDateTime(issue.Fields.Created, jira.RFC3339, t.displayFormat.Timezone))
+		case FieldUpdated:
+			bucket = append(bucket, formatDateTime(issue.Fields.Updated, jira.RFC3339, t.displayFormat.Timezone))
+		case FieldLabels:
+			bucket = append(bucket, strings.Join(issue.Fields.Labels, ","))
+		}
+	}
+	return bucket
+}
+
+// prefetchTopIssues fetches the first N issues asynchronously and caches them
+func (t *Table) PrefetchTopIssues() {
+	if len(t.allIssues) == 0 {
+		return
+	}
+
+	// Get prefetch count from config
+	prefetchCount := viper.GetInt("bubble.list.prefetch_from_top")
+	if prefetchCount <= 0 {
+		// If not configured or 0, disable prefetching
+		return
+	}
+
+	// Use a WaitGroup for controlled concurrency
+	var wg sync.WaitGroup
+	concurrencyLimit := 3 // Limit concurrent requests to avoid overwhelming the API
+	sem := make(chan struct{}, concurrencyLimit)
+
+	for i := 0; i < prefetchCount; i++ {
+		iss := t.allIssues[i]
+		key := iss.Key
+
+		// Skip if already cached
+		if _, exists := t.issueCache[key]; exists {
+			continue
+		}
+
+		wg.Add(1)
+		go func(issueKey string) {
+			defer wg.Done()
+			sem <- struct{}{}        // Acquire semaphore
+			defer func() { <-sem }() // Release semaphore
+
+			// Fetch detailed issue
+			detailedIssue, err := api.ProxyGetIssue(api.DefaultClient(false), issueKey, issue.NewNumCommentsFilter(10))
+			if err != nil {
+				// Log error but don't panic - just skip this issue
+				log.Printf("Failed to prefetch issue %s: %v", issueKey, err)
+				return
+			}
+
+			// Cache the detailed issue
+			t.issueCache[issueKey] = detailedIssue
+		}(key)
+	}
+
+	wg.Wait()
+}
+
+func (t *Table) GetSelectedIssueShift(shift int) *jira.Issue {
+	row := t.GetCursorRow()
+	var issuePool []*jira.Issue
+	if t.SorterState == SorterInactive {
+		issuePool = t.allIssues
+	} else {
+		issuePool = t.filteredIssues
+	}
+	pos := row + shift
+	if pos < 0 {
+		pos = 0
+	}
+	if pos >= len(issuePool) {
+		pos = len(issuePool) - 1
+	}
+
+	key := issuePool[pos].Key
+
+	if iss, ok := t.issueCache[key]; ok {
+		return iss
+	}
+
+	iss, err := api.ProxyGetIssue(api.DefaultClient(false), key, issue.NewNumCommentsFilter(10))
+	if err != nil {
+		panic(err)
+	}
+
+	t.issueCache[key] = iss
+	return iss
+}
+
+func (t *Table) RefreshCache(issues []*jira.Issue) {
+	t.allIssues = issues
+	t.issueCache = make(map[string]*jira.Issue)
 }
