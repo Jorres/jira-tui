@@ -18,6 +18,14 @@ type EditResponse struct {
 	Key string `json:"key"`
 }
 
+// EditComment holds comment data for editing
+type EditComment struct {
+	ID   string
+	Body string
+	// BodyIsRawADF indicates that Body contains raw ADF JSON that should be embedded directly
+	BodyIsRawADF bool
+}
+
 // EditRequest struct holds request data for edit request.
 // Setting an Assignee requires an account ID.
 type EditRequest struct {
@@ -27,6 +35,7 @@ type EditRequest struct {
 	Body           string
 	// BodyIsRawADF indicates that Body contains raw ADF JSON that should be embedded directly
 	BodyIsRawADF    bool
+	Comments        []EditComment
 	Priority        string
 	Labels          []string
 	Components      []string
@@ -46,6 +55,8 @@ func (er *EditRequest) WithCustomFields(cf []IssueTypeField) {
 
 // Edit updates an issue using POST /issue endpoint.
 func (c *Client) Edit(key string, req *EditRequest) error {
+	// CURRENT TASK here you must not make any changes related to comments yet, because
+	// comments are updated in a separate api call
 	data := getRequestDataForEdit(req)
 	if data == nil {
 		return fmt.Errorf("jira: invalid request - failed to parse ADF JSON")
@@ -72,6 +83,73 @@ func (c *Client) Edit(key string, req *EditRequest) error {
 		return formatUnexpectedResponse(res)
 	}
 
+	// Update comments separately
+	for _, comment := range req.Comments {
+		err := c.updateComment(key, comment)
+		if err != nil {
+			return fmt.Errorf("failed to update comment %s: %w", comment.ID, err)
+		}
+	}
+
+	return nil
+}
+
+// updateComment updates a single comment using PUT /issue/{key}/comment/{commentId} endpoint.
+func (c *Client) updateComment(issueKey string, comment EditComment) error {
+	path := fmt.Sprintf("/issue/%s/comment/%s", issueKey, comment.ID)
+	
+	var requestBody interface{}
+	if comment.BodyIsRawADF {
+		// Parse the ADF JSON string into a map for direct embedding
+		var adfMap interface{}
+		if err := json.Unmarshal([]byte(comment.Body), &adfMap); err != nil {
+			return fmt.Errorf("failed to parse ADF JSON: %w", err)
+		}
+		requestBody = map[string]interface{}{
+			"body": adfMap,
+		}
+	} else {
+		// For plain text, create simple ADF structure
+		requestBody = map[string]interface{}{
+			"body": map[string]interface{}{
+				"type":    "doc",
+				"version": 1,
+				"content": []interface{}{
+					map[string]interface{}{
+						"type": "paragraph",
+						"content": []interface{}{
+							map[string]interface{}{
+								"type": "text",
+								"text": comment.Body,
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+	
+	body, err := json.Marshal(requestBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal comment request: %w", err)
+	}
+	
+	res, err := c.Put(context.Background(), path, body, Header{
+		"Accept":       "application/json",
+		"Content-Type": "application/json",
+	})
+	if err != nil {
+		return err
+	}
+	if res == nil {
+		return ErrEmptyResponse
+	}
+	defer func() { _ = res.Body.Close() }()
+	
+	if res.StatusCode != http.StatusOK {
+		return formatUnexpectedResponse(res)
+	}
+	
 	return nil
 }
 

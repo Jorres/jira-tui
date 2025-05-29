@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/ankitpokhrel/jira-cli/pkg/adf"
+	"md-adf-exp/adf"
 )
 
 const (

@@ -10,8 +10,10 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/fatih/color"
 
+	"md-adf-exp/adf"
+	"md-adf-exp/adf2md"
+
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
-	"github.com/ankitpokhrel/jira-cli/pkg/adf"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/ankitpokhrel/jira-cli/pkg/md"
 	"github.com/ankitpokhrel/jira-cli/pkg/tui"
@@ -248,7 +250,7 @@ func (i Issue) description() string {
 	var desc string
 
 	if adfNode, ok := i.Data.Fields.Description.(*adf.ADF); ok {
-		desc = adf.NewTranslator(adfNode, adf.NewMarkdownTranslator()).Translate()
+		desc = adf2md.NewTranslator(adfNode, adf2md.NewMarkdownTranslator()).Translate()
 	} else {
 		desc = i.Data.Fields.Description.(string)
 		desc = md.FromJiraMD(desc)
@@ -395,7 +397,7 @@ func (i Issue) comments() []issueComment {
 		c := i.Data.Fields.Comment.Comments[idx]
 		var body string
 		if adfNode, ok := c.Body.(*adf.ADF); ok {
-			body = adf.NewTranslator(adfNode, adf.NewMarkdownTranslator()).Translate()
+			body = adf2md.NewTranslator(adfNode, adf2md.NewMarkdownTranslator()).Translate()
 		} else {
 			body = c.Body.(string)
 			body = md.FromJiraMD(body)

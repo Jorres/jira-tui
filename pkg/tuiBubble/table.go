@@ -3,11 +3,11 @@ package tuiBubble
 import (
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"sync"
 
 	"github.com/ankitpokhrel/jira-cli/api"
+	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter/issue"
 	"github.com/charmbracelet/bubbles/table"
@@ -15,14 +15,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/viper"
 )
-
-func debug(v ...any) {
-	f, _ := os.OpenFile("/home/jorres/hobbies/jira-cli/debug.log", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
-	for _, val := range v {
-		fmt.Fprintln(f, val)
-	}
-	f.Close()
-}
 
 var _ = log.Fatal
 
@@ -136,7 +128,7 @@ func NewTable(opts ...TableOption) *Table {
 	st := table.DefaultStyles()
 	st.Header = st.Header.
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color(240)).
+		BorderForeground(lipgloss.Color("240")).
 		BorderBottom(true).
 		Bold(true).
 		Foreground(lipgloss.Color("15")).
@@ -210,7 +202,7 @@ func (t *Table) filterTableData(filterText string) {
 
 	// Special case: when just entered search, we should not
 	// immediately yank all content from under user's nose
-	debug(filterText)
+	cmdutil.Debug(filterText)
 	if filterText == "" {
 		t.filteredIssues = t.allIssues
 		return
@@ -222,7 +214,7 @@ func (t *Table) filterTableData(filterText string) {
 			strings.ToLower(filterText),
 		) {
 			t.filteredIssues = append(t.filteredIssues, iss)
-			debug("including ", iss.Key)
+			cmdutil.Debug("including ", iss.Key)
 		}
 	}
 }

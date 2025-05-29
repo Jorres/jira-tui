@@ -231,3 +231,10 @@ func (c *Client) userList(opt *UserListOptions, ver string) ([]*User, error) {
 	}
 	return out, nil
 }
+
+func (u *User) GetDisplayableName() string {
+	if u.DisplayName != "" {
+		return u.DisplayName
+	}
+	return u.Name
+}

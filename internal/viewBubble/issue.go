@@ -3,7 +3,6 @@ package viewBubble
 import (
 	"fmt"
 	"log"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -12,8 +11,10 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/viper"
 
+	"md-adf-exp/adf"
+	"md-adf-exp/adf2md"
+
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
-	"github.com/ankitpokhrel/jira-cli/pkg/adf"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/ankitpokhrel/jira-cli/pkg/md"
 	"github.com/ankitpokhrel/jira-cli/pkg/tuiBubble"
@@ -233,7 +234,7 @@ func (i *IssueModel) description() string {
 	var desc string
 
 	if adfNode, ok := i.Data.Fields.Description.(*adf.ADF); ok {
-		desc = adf.NewTranslator(adfNode, adf.NewMarkdownTranslator()).Translate()
+		desc = adf2md.NewTranslator(adfNode, adf2md.NewMarkdownTranslator()).Translate()
 	} else {
 		desc = i.Data.Fields.Description.(string)
 		desc = md.FromJiraMD(desc)
@@ -244,14 +245,6 @@ func (i *IssueModel) description() string {
 	desc = i.colorizeSelected(desc)
 
 	return desc
-}
-
-func debug(v ...any) {
-	f, _ := os.OpenFile("/home/jorres/hobbies/jira-cli/debug.log", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
-	for _, val := range v {
-		fmt.Fprintln(f, val)
-	}
-	f.Close()
 }
 
 func (i *IssueModel) colorizeSelected(input string) string {
@@ -461,7 +454,7 @@ func (i *IssueModel) comments() []issueComment {
 		c := i.Data.Fields.Comment.Comments[idx]
 		var body string
 		if adfNode, ok := c.Body.(*adf.ADF); ok {
-			body = adf.NewTranslator(adfNode, adf.NewMarkdownTranslator()).Translate()
+			body = adf2md.NewTranslator(adfNode, adf2md.NewMarkdownTranslator()).Translate()
 		} else {
 			body = c.Body.(string)
 			body = md.FromJiraMD(body)
@@ -469,15 +462,12 @@ func (i *IssueModel) comments() []issueComment {
 		// Apply view-only link text replacement for better readability
 		body = replaceRedundantLinkText(body)
 		body = i.colorizeSelected(body)
-		authorName := func() string {
-			if c.Author.DisplayName != "" {
-				return c.Author.DisplayName
-			}
-			return c.Author.Name
-		}
+
+		authorName := c.Author.GetDisplayableName()
+
 		meta := fmt.Sprintf(
 			"\n %s • %s",
-			coloredOut(authorName(), color.FgWhite, color.Bold),
+			coloredOut(authorName, color.FgWhite, color.Bold),
 			coloredOut(cmdutil.FormatDateTimeHuman(c.Created, jira.RFC3339), color.FgWhite, color.Bold),
 		)
 		if idx == total-1 {
@@ -537,7 +527,6 @@ func (iss IssueModel) Update(msg tea.Msg) (IssueModel, tea.Cmd) {
 		case "ctrl+y":
 			iss.scrollUp()
 		case "tab":
-			debug("tab tab")
 			if iss.currentlyHighlightedLinkPos == iss.nLinks-1 {
 				// set to "no links selected"
 				iss.currentlyHighlightedLinkPos = -1
@@ -716,11 +705,3 @@ func (iss *IssueModel) ResetResetables() {
 	iss.calculateViewportDimensions()
 	iss.countLinks()
 }
-
-// currently highlighted link url feature:
-// proof of concept works
-// 1. you need to correctly loop over, not do %3. Count the number of links beforehand
-// 2. scrolling is not done
-// - Some nicer coloring and visual indication that link has been copied would be nice.
-// - The whole feature feels like fighting against the system, to be honest. Coloring BEFORE calling glamour should work and none of this
-// would be necessary.

@@ -11,14 +11,16 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	mdadf "md-adf-exp/adf"
+	"md-adf-exp/adf"
+	"md-adf-exp/adf2md"
+	"md-adf-exp/md2adf"
 
 	"github.com/ankitpokhrel/jira-cli/api"
 	"github.com/ankitpokhrel/jira-cli/internal/cmdcommon"
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
 	"github.com/ankitpokhrel/jira-cli/internal/query"
-	"github.com/ankitpokhrel/jira-cli/pkg/adf"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
+	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter/issue"
 	"github.com/ankitpokhrel/jira-cli/pkg/md"
 	"github.com/ankitpokhrel/jira-cli/pkg/surveyext"
 )
@@ -73,11 +75,20 @@ func edit(cmd *cobra.Command, args []string) {
 		params: params,
 	}
 
+	// panic: Comment count mismatch: expected 1 comments, got 0. DO NOT EDIT separator lines must not be modified.
+
+	// goroutine 1 [running]:
+	// github.com/ankitpokhrel/jira-cli/internal/cmd/issue/edit.edit(0xc000019808, {0xc000703960, 0x1, 0x1})
+	//         /home/jorres/hobbies/jira-cli/internal/cmd/issue/edit/edit.go:161 +0xff9
+	// github.com/spf13/cobra.(*Command).execute(0xc000019808, {0xc000703930, 0x1, 0x1})
+	//         /home/jorres/go/pkg/mod/github.com/spf13/cobra@v1.8.0/command.go:987 +0xa91
+	// github.com/spf13/cobra.(*Command).ExecuteC(0xc000018008)
+
 	issue, err := func() (*jira.Issue, error) {
 		s := cmdutil.Info(fmt.Sprintf("Fetching issue %s...", params.issueKey))
 		defer s.Stop()
 
-		issue, err := api.ProxyGetIssue(client, params.issueKey)
+		issue, err := api.ProxyGetIssue(client, params.issueKey, issue.NewNumCommentsFilter(10))
 		if err != nil {
 			return nil, err
 		}
@@ -98,18 +109,78 @@ func edit(cmd *cobra.Command, args []string) {
 			emailResolver := func(userID string) string {
 				return resolveUserIDToEmail(userID, client, project)
 			}
-			originalBody = adf.NewTranslator(adfBody, adf.NewJiraMarkdownTranslator(
-				adf.WithUserEmailResolver(emailResolver),
+			originalBody = adf2md.NewTranslator(adfBody, adf2md.NewJiraMarkdownTranslator(
+				adf2md.WithUserEmailResolver(emailResolver),
 			)).Translate()
 		} else {
 			originalBody = issue.Fields.Description.(string)
 		}
 	}
 
+	// Prepare content with comments separated by DO NOT EDIT lines
+	contentWithComments := originalBody
+
+	// Add comments if they exist
+	if issue.Fields.Comment.Total > 0 {
+		for _, comment := range issue.Fields.Comment.Comments {
+			contentWithComments += "\n\n# DO NOT EDIT THIS LINE - Comment by " + comment.Author.GetDisplayableName() + " (at " + comment.Created + ")\n\n"
+
+			// Convert comment body from ADF to markdown if needed
+			var commentBody string
+			cmdutil.Debug(commentBody)
+			if adfBody, ok := comment.Body.(*adf.ADF); ok {
+				// Create a user email resolver function
+				emailResolver := func(userID string) string {
+					return resolveUserIDToEmail(userID, client, project)
+				}
+				commentBody = adf2md.NewTranslator(adfBody, adf2md.NewJiraMarkdownTranslator(
+					adf2md.WithUserEmailResolver(emailResolver),
+				)).Translate()
+			} else {
+				commentBody = comment.Body.(string)
+			}
+
+			contentWithComments += commentBody
+		}
+	}
+
+	// Update originalBody to include comments for the editor
+	originalBody = contentWithComments
+
 	cmdutil.ExitIfError(ec.askQuestions(issue, originalBody))
 
 	if !params.noInput {
 		getAnswers(params, issue)
+	}
+
+	// Parse the edited content back into body and comments
+	if params.body != "" {
+		// Split content by DO NOT EDIT lines
+		separatorPattern := regexp.MustCompile(`(?m)^# DO NOT EDIT THIS LINE - Comment by .* \(.*\)$`)
+		segments := separatorPattern.Split(params.body, -1)
+
+		// First segment is the body
+		params.body = strings.TrimSpace(segments[0])
+
+		// Remaining segments are comments
+		expectedComments := len(issue.Fields.Comment.Comments)
+		actualComments := len(segments) - 1
+
+		if actualComments != expectedComments {
+			cmdutil.ExitIfError(fmt.Errorf(
+				"Comment count mismatch: expected %d comments, got %d. DO NOT EDIT separator lines must not be modified.",
+				expectedComments,
+				actualComments,
+			))
+		}
+
+		// Parse comments back
+		for i, commentText := range segments[1:] {
+			params.comments = append(params.comments, editComment{
+				id:   issue.Fields.Comment.Comments[i].ID,
+				body: strings.TrimSpace(commentText),
+			})
+		}
 	}
 
 	// Use stdin only if nothing is passed to --body
@@ -120,10 +191,13 @@ func edit(cmd *cobra.Command, args []string) {
 		}
 		params.body = string(b)
 	}
+
 	// Keep body as is if there were no changes.
 	if params.body != "" && params.body == originalBody {
 		params.body = ""
 	}
+
+	// TODO remove from editComments all the comments that are not edited (to prevent extra queries)
 
 	labels := params.labels
 	labels = append(labels, issue.Fields.Labels...)
@@ -153,12 +227,11 @@ func edit(cmd *cobra.Command, args []string) {
 		body := params.body
 		bodyIsRawADF := false
 		if isADF && body != "" {
-			// Convert markdown to ADF if we have mentions
 			adfBody, convErr := convertMarkdownToADF(body, client, project)
 			if convErr != nil {
-				// Fall back to original conversion if ADF conversion fails
-				fmt.Fprintf(os.Stderr, "Warning: ADF conversion failed, falling back to JiraMD: %v\n", convErr)
-				body = md.ToJiraMD(body)
+				panic("convertion to ADF should always succeed. If it fails, something isn't supported in converter yet")
+				// fmt.Fprintf(os.Stderr, "Warning: ADF conversion failed, falling back to JiraMD: %v\n", convErr)
+				// body = md.ToJiraMD(body)
 			} else {
 				body = adfBody
 				bodyIsRawADF = true
@@ -167,16 +240,43 @@ func edit(cmd *cobra.Command, args []string) {
 			body = md.ToJiraMD(body)
 		}
 
+		// Convert comments to ADF format
+		var editComments []jira.EditComment
+		for _, comment := range params.comments {
+			commentBody := comment.body
+			commentBodyIsRawADF := false
+
+			if isADF && commentBody != "" {
+				adfBody, convErr := convertMarkdownToADF(commentBody, client, project)
+				if convErr != nil {
+					panic("conversion to ADF should always succeed. If it fails, something isn't supported in converter yet")
+				} else {
+					commentBody = adfBody
+					commentBodyIsRawADF = true
+				}
+			} else if isADF {
+				commentBody = md.ToJiraMD(commentBody)
+			}
+
+			editComments = append(editComments, jira.EditComment{
+				ID:           comment.id,
+				Body:         commentBody,
+				BodyIsRawADF: commentBodyIsRawADF,
+			})
+		}
+
 		parent := cmdutil.GetJiraIssueKey(project, params.parentIssueKey)
 		if parent == "" && issue.Fields.Parent != nil {
 			parent = issue.Fields.Parent.Key
 		}
 
+		// Create EditRequest with comments
 		edr := jira.EditRequest{
 			ParentIssueKey:  parent,
 			Summary:         params.summary,
 			Body:            body,
 			BodyIsRawADF:    bodyIsRawADF,
+			Comments:        editComments,
 			Priority:        params.priority,
 			Labels:          labels,
 			Components:      components,
@@ -188,10 +288,6 @@ func edit(cmd *cobra.Command, args []string) {
 			cmdcommon.ValidateCustomFields(edr.CustomFields, configuredCustomFields)
 			edr.WithCustomFields(configuredCustomFields)
 		}
-
-		f, _ := os.OpenFile("/home/jorres/hobbies/jira-cli/debug.log", os.O_CREATE|os.O_RDWR, 0644)
-		fmt.Fprintf(f, "%+v\n", edr)
-
 		return client.Edit(params.issueKey, &edr)
 	}()
 	cmdutil.ExitIfError(err)
@@ -328,11 +424,17 @@ func (ec *editCmd) askQuestions(issue *jira.Issue, originalBody string) error {
 	return nil
 }
 
+type editComment struct {
+	id   string
+	body string
+}
+
 type editParams struct {
 	issueKey        string
 	parentIssueKey  string
 	summary         string
 	body            string
+	comments        []editComment
 	priority        string
 	assignee        string
 	labels          []string
@@ -531,9 +633,9 @@ func convertMarkdownToADF(body string, client *jira.Client, project string) (str
 		}
 	}
 
-	// Convert markdown to ADF using the converter
-	converter := mdadf.NewAdfConverter()
-	adfDoc, err := converter.ConvertToADF([]byte(body), userMapping)
+	// Convert markdown to ADF using the translator
+	translator := md2adf.NewTranslator()
+	adfDoc, err := translator.TranslateToADF([]byte(body), userMapping)
 	if err != nil {
 		return "", fmt.Errorf("failed to convert markdown to ADF: %w", err)
 	}

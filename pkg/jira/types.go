@@ -61,6 +61,13 @@ func (i Issue) FilterValue() string { return fmt.Sprintf("%s %s", i.Key, i.Field
 func (i Issue) Description() string { return i.Fields.Summary }
 func (i Issue) Title() string       { return i.Key }
 
+type Comments []struct {
+	ID      string      `json:"id"`
+	Author  User        `json:"author"`
+	Body    interface{} `json:"body"` // string in v1/v2, adf.ADF in v3
+	Created string      `json:"created"`
+}
+
 // IssueFields holds issue fields.
 type IssueFields struct {
 	Summary     string      `json:"summary"`
@@ -99,13 +106,8 @@ type IssueFields struct {
 		Name string `json:"name"`
 	} `json:"versions"`
 	Comment struct {
-		Comments []struct {
-			ID      string      `json:"id"`
-			Author  User        `json:"author"`
-			Body    interface{} `json:"body"` // string in v1/v2, adf.ADF in v3
-			Created string      `json:"created"`
-		} `json:"comments"`
-		Total int `json:"total"`
+		Comments Comments `json:"comments"`
+		Total    int      `json:"total"`
 	} `json:"comment"`
 	Subtasks   []Issue
 	IssueLinks []struct {

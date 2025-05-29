@@ -10,9 +10,9 @@ import (
 
 	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter/issue"
 
-	"github.com/ankitpokhrel/jira-cli/pkg/adf"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter"
 	"github.com/ankitpokhrel/jira-cli/pkg/md"
+	"md-adf-exp/adf"
 )
 
 const (
