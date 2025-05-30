@@ -24,6 +24,7 @@ import (
 	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter/issue"
 	"github.com/ankitpokhrel/jira-cli/pkg/md"
 	"github.com/ankitpokhrel/jira-cli/pkg/surveyext"
+	"github.com/ankitpokhrel/jira-cli/pkg/tuiBubble"
 )
 
 var _ = debug.Debug
@@ -76,15 +77,6 @@ func edit(cmd *cobra.Command, args []string) {
 		params: params,
 	}
 
-	// panic: Comment count mismatch: expected 1 comments, got 0. DO NOT EDIT separator lines must not be modified.
-
-	// goroutine 1 [running]:
-	// github.com/ankitpokhrel/jira-cli/internal/cmd/issue/edit.edit(0xc000019808, {0xc000703960, 0x1, 0x1})
-	//         /home/jorres/hobbies/jira-cli/internal/cmd/issue/edit/edit.go:161 +0xff9
-	// github.com/spf13/cobra.(*Command).execute(0xc000019808, {0xc000703930, 0x1, 0x1})
-	//         /home/jorres/go/pkg/mod/github.com/spf13/cobra@v1.8.0/command.go:987 +0xa91
-	// github.com/spf13/cobra.(*Command).ExecuteC(0xc000018008)
-
 	issue, err := func() (*jira.Issue, error) {
 		s := cmdutil.Info(fmt.Sprintf("Fetching issue %s...", params.issueKey))
 		defer s.Stop()
@@ -125,7 +117,13 @@ func edit(cmd *cobra.Command, args []string) {
 	// Add comments if they exist
 	if issue.Fields.Comment.Total > 0 {
 		for _, comment := range issue.Fields.Comment.Comments {
-			contentWithComments += "\n\n# DO NOT EDIT THIS LINE - Comment by " + comment.Author.GetDisplayableName() + " (at " + comment.Created + ")\n\n"
+
+			at := tuiBubble.FormatDateTime(comment.Created, jira.RFC3339, "Local")
+			contentWithComments += fmt.Sprintf(
+				"\n\n# DO NOT EDIT THIS LINE - Comment by %s (at %s)\n\n",
+				comment.Author.GetDisplayableName(),
+				at,
+			)
 
 			// Convert comment body from ADF to markdown if needed
 			var commentBody string
@@ -151,7 +149,7 @@ func edit(cmd *cobra.Command, args []string) {
 	cmdutil.ExitIfError(ec.askQuestions(issue, originalBody))
 
 	if !params.noInput {
-		getAnswers(params, issue)
+		getAnswers(client, params, issue)
 	}
 
 	// Parse the edited content back into body and comments
@@ -194,6 +192,9 @@ func edit(cmd *cobra.Command, args []string) {
 
 	// Keep body as is if there were no changes.
 	if params.body != "" && params.body == originalBody {
+		// TODO there are some bugs, like stray (or missing) '\n' after links
+		// which cause the content in jira to update all the time, and this edit avoidance
+		// does not work because strings are technically different
 		params.body = ""
 	}
 
@@ -230,8 +231,6 @@ func edit(cmd *cobra.Command, args []string) {
 			adfBody, convErr := convertMarkdownToADF(body, client, project)
 			if convErr != nil {
 				panic("convertion to ADF should always succeed. If it fails, something isn't supported in converter yet")
-				// fmt.Fprintf(os.Stderr, "Warning: ADF conversion failed, falling back to JiraMD: %v\n", convErr)
-				// body = md.ToJiraMD(body)
 			} else {
 				body = adfBody
 				bodyIsRawADF = true
@@ -302,7 +301,7 @@ func edit(cmd *cobra.Command, args []string) {
 	}
 }
 
-func getAnswers(params *editParams, issue *jira.Issue) {
+func getAnswers(client *jira.Client, params *editParams, issue *jira.Issue) {
 	answer := struct{ Action string }{}
 	for answer.Action != cmdcommon.ActionSubmit {
 		err := survey.Ask([]*survey.Question{cmdcommon.GetNextAction()}, &answer)
@@ -313,35 +312,45 @@ func getAnswers(params *editParams, issue *jira.Issue) {
 			cmdutil.Failed("Action aborted")
 		case cmdcommon.ActionMetadata:
 			ans := struct{ Metadata []string }{}
-			err := survey.Ask(cmdcommon.GetMetadata(), &ans)
+			customFields, err := client.GetCustomFields()
+			if err != nil {
+				panic("failed to get custom fields")
+			}
+			err = survey.Ask(cmdcommon.GetMetadata(customFields), &ans)
+
 			cmdutil.ExitIfError(err)
 
 			if len(ans.Metadata) > 0 {
-				qs := getMetadataQuestions(ans.Metadata, issue)
-				ans := struct {
-					Priority        string
-					Labels          string
-					Components      string
-					FixVersions     string
-					AffectsVersions string
-				}{}
+				keys := []string{}
+				for _, v := range ans.Metadata {
+					keys = append(keys, v)
+				}
+				qs := getMetadataQuestions(keys, customFields, issue)
+				ans := make(map[string]any)
+
 				err := survey.Ask(qs, &ans)
 				cmdutil.ExitIfError(err)
 
-				if ans.Priority != "" {
-					params.priority = ans.Priority
+				if priority, ok := ans["Priority"].(string); ok && priority != "" {
+					params.priority = priority
 				}
-				if len(ans.Labels) > 0 {
-					params.labels = strings.Split(ans.Labels, ",")
+				if labels, ok := ans["Labels"].(string); ok && labels != "" {
+					params.labels = strings.Split(labels, ",")
 				}
-				if len(ans.Components) > 0 {
-					params.components = strings.Split(ans.Components, ",")
+				if components, ok := ans["Components"].(string); ok && components != "" {
+					params.components = strings.Split(components, ",")
 				}
-				if len(ans.FixVersions) > 0 {
-					params.fixVersions = strings.Split(ans.FixVersions, ",")
+				if fixVers, ok := ans["FixVersions"].(string); ok && fixVers != "" {
+					params.fixVersions = strings.Split(fixVers, ",")
 				}
-				if len(ans.AffectsVersions) > 0 {
-					params.affectsVersions = strings.Split(ans.AffectsVersions, ",")
+				if affVers, ok := ans["AffectsVersions"].(string); ok && affVers != "" {
+					params.affectsVersions = strings.Split(affVers, ",")
+				}
+
+				for k, v := range ans {
+					// customfield_12... -> channel
+					debug.Debug(k, v)
+					params.customFields[k] = v.(string)
 				}
 			}
 		}
@@ -430,20 +439,22 @@ type editComment struct {
 }
 
 type editParams struct {
-	issueKey        string
-	parentIssueKey  string
-	summary         string
-	body            string
-	comments        []editComment
+	issueKey       string
+	parentIssueKey string
+	summary        string
+	body           string
+	comments       []editComment
+	assignee       string
+
 	priority        string
-	assignee        string
 	labels          []string
 	components      []string
 	fixVersions     []string
 	affectsVersions []string
-	customFields    map[string]string
-	noInput         bool
-	debug           bool
+
+	customFields map[string]string
+	noInput      bool
+	debug        bool
 }
 
 func parseArgsAndFlags(flags query.FlagParser, args []string, project string) *editParams {
@@ -500,7 +511,7 @@ func parseArgsAndFlags(flags query.FlagParser, args []string, project string) *e
 	}
 }
 
-func getMetadataQuestions(meta []string, issue *jira.Issue) []*survey.Question {
+func getMetadataQuestions(meta []string, customFields []*jira.Field, issue *jira.Issue) []*survey.Question {
 	var qs []*survey.Question
 
 	fixVersions := make([]string, 0, len(issue.Fields.FixVersions))
@@ -513,8 +524,13 @@ func getMetadataQuestions(meta []string, issue *jira.Issue) []*survey.Question {
 		affectsVersions = append(affectsVersions, fv.Name)
 	}
 
-	for _, m := range meta {
-		switch m {
+	customFieldMap := make(map[string]*jira.Field)
+	for _, field := range customFields {
+		customFieldMap[field.Name] = field
+	}
+
+	for _, name := range meta {
+		switch name {
 		case "Priority":
 			qs = append(qs, &survey.Question{
 				Name:   "priority",
@@ -555,6 +571,18 @@ func getMetadataQuestions(meta []string, issue *jira.Issue) []*survey.Question {
 					Default: strings.Join(affectsVersions, ","),
 				},
 			})
+		default:
+			if customField, ok := customFieldMap[name]; ok {
+				qs = append(qs, &survey.Question{
+					Name: customField.ID,
+					Prompt: &survey.Input{
+						Message: customField.Name,
+						Help:    "Sorry, no help for custom fields",
+						Default: "",
+						// Default: issue.Fields.CustomFields[customField.ID],
+					},
+				})
+			}
 		}
 	}
 

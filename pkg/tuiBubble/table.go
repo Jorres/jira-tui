@@ -83,6 +83,8 @@ type WidgetSizeMsg struct {
 	Height int
 }
 
+type NopMsg struct{}
+
 type CurrentIssueReceivedMsg struct {
 	Table *Table
 	Issue *jira.Issue
@@ -500,9 +502,9 @@ func (t *Table) assignColumns(columns []string, issue *jira.Issue) []string {
 		case FieldResolution:
 			bucket = append(bucket, issue.Fields.Resolution.Name)
 		case FieldCreated:
-			bucket = append(bucket, formatDateTime(issue.Fields.Created, jira.RFC3339, t.displayFormat.Timezone))
+			bucket = append(bucket, FormatDateTime(issue.Fields.Created, jira.RFC3339, t.displayFormat.Timezone))
 		case FieldUpdated:
-			bucket = append(bucket, formatDateTime(issue.Fields.Updated, jira.RFC3339, t.displayFormat.Timezone))
+			bucket = append(bucket, FormatDateTime(issue.Fields.Updated, jira.RFC3339, t.displayFormat.Timezone))
 		case FieldLabels:
 			bucket = append(bucket, strings.Join(issue.Fields.Labels, ","))
 		}
@@ -549,6 +551,13 @@ func (t *Table) ScheduleIssueUpdateMessage(shift int) tea.Cmd {
 	} else {
 		issuePool = t.filteredIssues
 	}
+
+	if len(issuePool) == 0 {
+		return func() tea.Msg {
+			return NopMsg{}
+		}
+	}
+
 	pos := row + shift
 	if pos < 0 {
 		pos = 0

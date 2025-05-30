@@ -88,13 +88,22 @@ func GetNextAction() *survey.Question {
 }
 
 // GetMetadata gathers a list of metadata users wants to add.
-func GetMetadata() []*survey.Question {
+func GetMetadata(possibleFields []*jira.Field) []*survey.Question {
+	options := []string{"Priority", "Components", "Labels", "FixVersions", "AffectsVersions"}
+	if len(possibleFields) > 0 {
+		for _, field := range possibleFields {
+			if field.Custom {
+				options = append(options, field.Name)
+			}
+		}
+	}
+
 	return []*survey.Question{
 		{
 			Name: "metadata",
 			Prompt: &survey.MultiSelect{
 				Message: "What would you like to add?",
-				Options: []string{"Priority", "Components", "Labels", "FixVersions", "AffectsVersions"},
+				Options: options,
 			},
 		},
 	}
@@ -163,7 +172,7 @@ func HandleNoInput(params *CreateParams) error {
 			cmdutil.Failed("Action aborted")
 		case ActionMetadata:
 			ans := struct{ Metadata []string }{}
-			err := survey.Ask(GetMetadata(), &ans)
+			err := survey.Ask(GetMetadata([]*jira.Field{}), &ans)
 			if err != nil {
 				return err
 			}
@@ -242,12 +251,18 @@ func GetConfiguredCustomFields() ([]jira.IssueTypeField, error) {
 // ValidateCustomFields validates custom fields.
 // TODO: Fail with error instead of warning in future release.
 func ValidateCustomFields(fields map[string]string, configuredFields []jira.IssueTypeField) {
+	// customfield_12... -> channel
 	if len(fields) == 0 {
 		return
 	}
 
 	fieldsMap := make(map[string]string)
 	for _, configured := range configuredFields {
+		if configured.Key != "" {
+			fieldsMap[configured.Key] = configured.Name
+			continue
+		}
+
 		identifier := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(configured.Name)), " ", "-")
 		fieldsMap[identifier] = configured.Name
 	}

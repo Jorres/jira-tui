@@ -629,7 +629,7 @@ func TestGetField(t *testing.T) {
 
 	client := NewClient(Config{Server: server.URL}, WithTimeout(3*time.Second))
 
-	actual, err := client.GetField()
+	actual, err := client.GetFields()
 	assert.NoError(t, err)
 
 	expected := []*Field{
@@ -676,7 +676,7 @@ func TestGetField(t *testing.T) {
 
 	unexpectedStatusCode = true
 
-	_, err = client.GetField()
+	_, err = client.GetFields()
 	assert.NotNil(t, err)
 }
 

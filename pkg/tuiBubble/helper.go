@@ -22,7 +22,7 @@ func ValidIssueColumns() []string {
 	}
 }
 
-func formatDateTime(dt, format, tz string) string {
+func FormatDateTime(dt, format, tz string) string {
 	t, err := time.Parse(format, dt)
 	if err != nil {
 		return dt

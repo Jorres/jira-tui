@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"md-adf-exp/md2adf"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/ankitpokhrel/jira-cli/internal/debug"
 )
 
 const separatorMinus = "-"
@@ -55,8 +59,6 @@ func (er *EditRequest) WithCustomFields(cf []IssueTypeField) {
 
 // Edit updates an issue using POST /issue endpoint.
 func (c *Client) Edit(key string, req *EditRequest) error {
-	// CURRENT TASK here you must not make any changes related to comments yet, because
-	// comments are updated in a separate api call
 	data := getRequestDataForEdit(req)
 	if data == nil {
 		return fmt.Errorf("jira: invalid request - failed to parse ADF JSON")
@@ -67,6 +69,7 @@ func (c *Client) Edit(key string, req *EditRequest) error {
 		return err
 	}
 
+	debug.Debug("before sending", string(body))
 	res, err := c.Put(context.Background(), "/issue/"+key, body, Header{
 		"Accept":       "application/json",
 		"Content-Type": "application/json",
@@ -153,7 +156,7 @@ func (c *Client) updateComment(issueKey string, comment EditComment) error {
 	return nil
 }
 
-type editFields struct {
+type editUpdate struct {
 	Summary []struct {
 		Set string `json:"set,omitempty"`
 	} `json:"summary,omitempty"`
@@ -193,16 +196,14 @@ type editFields struct {
 			Name string `json:"name,omitempty"`
 		} `json:"remove,omitempty"`
 	} `json:"versions,omitempty"`
-
-	customFields customField
 }
 
-type editFieldsMarshaler struct {
-	M editFields
+type editUpdateMarshaler struct {
+	M editUpdate
 }
 
 // MarshalJSON is a custom marshaler to handle empty fields.
-func (cfm *editFieldsMarshaler) MarshalJSON() ([]byte, error) {
+func (cfm *editUpdateMarshaler) MarshalJSON() ([]byte, error) {
 	if len(cfm.M.Summary) == 0 || cfm.M.Summary[0].Set == "" {
 		cfm.M.Summary = nil
 	}
@@ -231,6 +232,22 @@ func (cfm *editFieldsMarshaler) MarshalJSON() ([]byte, error) {
 	}
 	dm := temp.(map[string]interface{})
 
+	return json.Marshal(dm)
+}
+
+// MarshalJSON is a custom marshaler to handle empty fields.
+func (cfm *editFieldsMarshaler) MarshalJSON() ([]byte, error) {
+	m, err := json.Marshal(cfm.M)
+	if err != nil {
+		return m, err
+	}
+
+	var temp interface{}
+	if err := json.Unmarshal(m, &temp); err != nil {
+		return nil, err
+	}
+	dm := temp.(map[string]interface{})
+
 	for key, val := range cfm.M.customFields {
 		dm[key] = val
 	}
@@ -238,14 +255,23 @@ func (cfm *editFieldsMarshaler) MarshalJSON() ([]byte, error) {
 	return json.Marshal(dm)
 }
 
+type Parent struct {
+	Key string `json:"key,omitempty"`
+	Set string `json:"set,omitempty"`
+}
+
+type editFields struct {
+	Parent       Parent `json:"parent,omitempty"`
+	customFields customField
+}
+
+type editFieldsMarshaler struct {
+	M editFields
+}
+
 type editRequest struct {
-	Update editFieldsMarshaler `json:"update"`
-	Fields struct {
-		Parent *struct {
-			Key string `json:"key,omitempty"`
-			Set string `json:"set,omitempty"`
-		} `json:"parent,omitempty"`
-	} `json:"fields"`
+	Update editUpdateMarshaler `json:"update"`
+	Fields editFieldsMarshaler `json:"fields"`
 }
 
 func getRequestDataForEdit(req *EditRequest) *editRequest {
@@ -267,7 +293,7 @@ func getRequestDataForEdit(req *EditRequest) *editRequest {
 
 	log.Printf("%v\n", descriptionContent)
 
-	update := editFieldsMarshaler{editFields{
+	update := editUpdateMarshaler{editUpdate{
 		Summary: []struct {
 			Set string `json:"set,omitempty"`
 		}{{Set: req.Summary}},
@@ -427,22 +453,17 @@ func getRequestDataForEdit(req *EditRequest) *editRequest {
 		update.M.AffectsVersions = versions
 	}
 
-	fields := struct {
-		Parent *struct {
-			Key string `json:"key,omitempty"`
-			Set string `json:"set,omitempty"`
-		} `json:"parent,omitempty"`
-	}{
-		Parent: &struct {
-			Key string `json:"key,omitempty"`
-			Set string `json:"set,omitempty"`
-		}{},
+	fields := editFieldsMarshaler{
+		M: editFields{
+			Parent: Parent{},
+		},
 	}
+
 	if req.ParentIssueKey != "" {
 		if req.ParentIssueKey == AssigneeNone {
-			fields.Parent.Set = AssigneeNone
+			fields.M.Parent.Set = AssigneeNone
 		} else {
-			fields.Parent.Key = req.ParentIssueKey
+			fields.M.Parent.Key = req.ParentIssueKey
 		}
 	}
 
@@ -460,20 +481,20 @@ func constructCustomFieldsForEdit(fields map[string]string, configuredFields []I
 		return
 	}
 
-	data.Update.M.customFields = make(customField)
+	data.Fields.M.customFields = make(customField)
 
 	for key, val := range fields {
 		for _, configured := range configuredFields {
 			identifier := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(configured.Name)), " ", "-")
-			if identifier != strings.ToLower(key) {
+			if identifier != strings.ToLower(key) && key != configured.Key {
 				continue
 			}
 
 			switch configured.Schema.DataType {
 			case customFieldFormatOption:
-				data.Update.M.customFields[configured.Key] = []customFieldTypeOptionSet{{Set: customFieldTypeOption{Value: val}}}
+				data.Fields.M.customFields[configured.Key] = []customFieldTypeOptionSet{{Set: customFieldTypeOption{Value: val}}}
 			case customFieldFormatProject:
-				data.Update.M.customFields[configured.Key] = []customFieldTypeProjectSet{{Set: customFieldTypeProject{Value: val}}}
+				data.Fields.M.customFields[configured.Key] = []customFieldTypeProjectSet{{Set: customFieldTypeProject{Value: val}}}
 			case customFieldFormatArray:
 				pieces := strings.Split(strings.TrimSpace(val), ",")
 				if configured.Schema.Items == customFieldFormatOption {
@@ -485,20 +506,23 @@ func constructCustomFieldsForEdit(fields map[string]string, configuredFields []I
 							items = append(items, customFieldTypeOptionAddRemove{Add: &customFieldTypeOption{Value: p}})
 						}
 					}
-					data.Update.M.customFields[configured.Key] = items
+					data.Fields.M.customFields[configured.Key] = items
 				} else {
-					data.Update.M.customFields[configured.Key] = pieces
+					data.Fields.M.customFields[configured.Key] = pieces
 				}
 			case customFieldFormatNumber:
 				num, err := strconv.ParseFloat(val, 64) //nolint:gomnd
 				if err != nil {
 					// Let Jira API handle data type error for now.
-					data.Update.M.customFields[configured.Key] = []customFieldTypeStringSet{{Set: val}}
+					data.Fields.M.customFields[configured.Key] = []customFieldTypeStringSet{{Set: val}}
 				} else {
-					data.Update.M.customFields[configured.Key] = []customFieldTypeNumberSet{{Set: customFieldTypeNumber(num)}}
+					data.Fields.M.customFields[configured.Key] = []customFieldTypeNumberSet{{Set: customFieldTypeNumber(num)}}
 				}
 			default:
-				data.Update.M.customFields[configured.Key] = []customFieldTypeStringSet{{Set: val}}
+				// TODO make user email parameter an option to the constructor
+				val, _ := md2adf.NewTranslator().TranslateToADF([]byte(val), make(map[string]string))
+				data.Fields.M.customFields[configured.Key] = val
+				// TODO we lost compatibility with v2 api here
 			}
 		}
 	}
@@ -514,19 +538,10 @@ func splitAddAndRemove(input []string) ([]string, []string) {
 		}
 	}
 	for _, inp := range input {
-		if !strings.HasPrefix(inp, separatorMinus) && !inArray(sub, inp) {
+		if !strings.HasPrefix(inp, separatorMinus) && !slices.Contains(sub, inp) {
 			add = append(add, inp)
 		}
 	}
 
 	return add, sub
-}
-
-func inArray(array []string, item string) bool {
-	for _, i := range array {
-		if i == item {
-			return true
-		}
-	}
-	return false
 }

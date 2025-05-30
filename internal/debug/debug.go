@@ -16,5 +16,5 @@ func Debug(v ...any) {
 
 func Fatal(v ...any) {
 	Debug(v...)
-	log.Fatal("Exiting...")
+	log.Fatal("Exiting in debug.Fatal()...")
 }

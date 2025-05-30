@@ -696,7 +696,7 @@ func (c *JiraCLIConfigGenerator) configureIssueTypesForJiraServerV9() error {
 func (c *JiraCLIConfigGenerator) configureFields() error {
 	customFields := make([]*issueTypeFieldConf, 0)
 
-	fields, err := c.jiraClient.GetField()
+	fields, err := c.jiraClient.GetFields()
 	if err != nil {
 		return err
 	}

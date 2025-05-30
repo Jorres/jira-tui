@@ -382,8 +382,8 @@ func (c *Client) AddIssueWorklog(key, started, timeSpent, comment, newEstimate s
 	return nil
 }
 
-// GetField gets all fields configured for a Jira instance using GET /field endpiont.
-func (c *Client) GetField() ([]*Field, error) {
+// GetFields gets all fields configured for a Jira instance using GET /field endpiont.
+func (c *Client) GetFields() ([]*Field, error) {
 	res, err := c.GetV2(context.Background(), "/field", Header{
 		"Accept":       "application/json",
 		"Content-Type": "application/json",
@@ -405,6 +405,22 @@ func (c *Client) GetField() ([]*Field, error) {
 	err = json.NewDecoder(res.Body).Decode(&out)
 
 	return out, err
+}
+
+// GetCustomFields gets all fields marked as custom using GET /field endpiont.
+func (c *Client) GetCustomFields() ([]*Field, error) {
+	fields, err := c.GetFields()
+	if err != nil {
+		return []*Field{}, err
+	}
+
+	customFields := []*Field{}
+	for _, field := range fields {
+		if field.Custom {
+			customFields = append(customFields, field)
+		}
+	}
+	return customFields, nil
 }
 
 func ifaceToADF(v interface{}) *adf.ADF {
