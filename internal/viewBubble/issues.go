@@ -129,7 +129,7 @@ type fuzzySelectorResult struct {
 
 // Init initializes the IssueList model.
 func (l *IssueList) Init() tea.Cmd {
-	return l.prefetchIssuesCmd()
+	return nil
 }
 
 func (l *IssueList) forceRedrawCmd() tea.Cmd {
@@ -151,16 +151,6 @@ func (l *IssueList) getCurrentIssueDetailView() IssueModel {
 // getCurrentTabConfig returns the tab config for the active tab
 func (l *IssueList) getCurrentTabConfig() *TabConfig {
 	return l.tabs[l.activeTab]
-}
-
-// prefetchIssuesCmd creates a command to pre-fetch the first N issues
-func (l *IssueList) prefetchIssuesCmd() tea.Cmd {
-	return func() tea.Msg {
-		for _, table := range l.tables {
-			go table.PrefetchTopIssues()
-		}
-		return nil
-	}
 }
 
 type editorFinishedMsg struct{ err error }

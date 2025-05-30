@@ -3,16 +3,13 @@ package tuiBubble
 import (
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/ankitpokhrel/jira-cli/api"
-	"github.com/ankitpokhrel/jira-cli/internal/debug"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter/issue"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -511,55 +508,6 @@ func (t *Table) assignColumns(columns []string, issue *jira.Issue) []string {
 		}
 	}
 	return bucket
-}
-
-// prefetchTopIssues fetches the first N issues asynchronously and caches them
-func (t *Table) PrefetchTopIssues() {
-	if len(t.allIssues) == 0 {
-		return
-	}
-
-	// Get prefetch count from config
-	prefetchCount := viper.GetInt("bubble.list.prefetch_from_top")
-	if prefetchCount <= 0 {
-		// If not configured or 0, disable prefetching
-		return
-	}
-
-	// Use a WaitGroup for controlled concurrency
-	var wg sync.WaitGroup
-	concurrencyLimit := 3 // Limit concurrent requests to avoid overwhelming the API
-	sem := make(chan struct{}, concurrencyLimit)
-
-	for i := 0; i < min(prefetchCount, len(t.allIssues)); i++ {
-		iss := t.allIssues[i]
-		key := iss.Key
-
-		// Skip if already cached
-		if _, exists := t.issueCache[key]; exists {
-			continue
-		}
-
-		wg.Add(1)
-		go func(issueKey string) {
-			defer wg.Done()
-			sem <- struct{}{}        // Acquire semaphore
-			defer func() { <-sem }() // Release semaphore
-
-			// Fetch detailed issue
-			detailedIssue, err := api.ProxyGetIssue(api.DefaultClient(false), issueKey, issue.NewNumCommentsFilter(10))
-			if err != nil {
-				// Log error but don't panic - just skip this issue
-				debug.Debug("Failed to prefetch issue %s: %v", issueKey, err)
-				return
-			}
-
-			// Cache the detailed issue
-			t.issueCache[issueKey] = detailedIssue
-		}(key)
-	}
-
-	wg.Wait()
 }
 
 func (t *Table) GetIssueSync(shift int) *jira.Issue {
