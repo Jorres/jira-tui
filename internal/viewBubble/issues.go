@@ -371,8 +371,10 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		currentTable := l.getCurrentTable()
 		if currentTable != nil {
 			if currentTable.SorterState == tuiBubble.SorterFiltering {
-				l.tables[l.activeTab], cmd = currentTable.Update(msg)
-				return l, cmd
+				var cmd1, cmd2 tea.Cmd
+				l.tables[l.activeTab], cmd1 = currentTable.Update(msg)
+				cmd2 = l.tables[l.activeTab].ScheduleIssueUpdateMessage(0)
+				return l, tea.Batch(cmd1, cmd2)
 			}
 
 			if currentTable.SorterState == tuiBubble.SorterActive && msg.String() == "esc" {
