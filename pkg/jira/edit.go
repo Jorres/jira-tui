@@ -97,7 +97,7 @@ func (c *Client) Edit(key string, req *EditRequest) error {
 // updateComment updates a single comment using PUT /issue/{key}/comment/{commentId} endpoint.
 func (c *Client) updateComment(issueKey string, comment EditComment) error {
 	path := fmt.Sprintf("/issue/%s/comment/%s", issueKey, comment.ID)
-	
+
 	var requestBody interface{}
 	if comment.BodyIsRawADF {
 		// Parse the ADF JSON string into a map for direct embedding
@@ -128,12 +128,12 @@ func (c *Client) updateComment(issueKey string, comment EditComment) error {
 			},
 		}
 	}
-	
+
 	body, err := json.Marshal(requestBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal comment request: %w", err)
 	}
-	
+
 	res, err := c.Put(context.Background(), path, body, Header{
 		"Accept":       "application/json",
 		"Content-Type": "application/json",
@@ -145,11 +145,11 @@ func (c *Client) updateComment(issueKey string, comment EditComment) error {
 		return ErrEmptyResponse
 	}
 	defer func() { _ = res.Body.Close() }()
-	
+
 	if res.StatusCode != http.StatusOK {
 		return formatUnexpectedResponse(res)
 	}
-	
+
 	return nil
 }
 

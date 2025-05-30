@@ -6,9 +6,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"md-adf-exp/adf"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/ankitpokhrel/jira-cli/pkg/tui"
+	"md-adf-exp/adf"
 )
 
 func TestIssueDetailsRenderInPlainView(t *testing.T) {
@@ -52,13 +52,8 @@ func TestIssueDetailsRenderInPlainView(t *testing.T) {
 				Name string `json:"name"`
 			}{{Name: "BE"}, {Name: "FE"}},
 			Comment: struct {
-				Comments []struct {
-					ID      string      `json:"id"`
-					Author  jira.User   `json:"author"`
-					Body    interface{} `json:"body"`
-					Created string      `json:"created"`
-				} `json:"comments"`
-				Total int `json:"total"`
+				Comments jira.Comments `json:"comments"`
+				Total    int           `json:"total"`
 			}{Total: 0},
 			Watches: struct {
 				IsWatching bool `json:"isWatching"`
@@ -117,13 +112,8 @@ func TestIssueDetailsWithV2Description(t *testing.T) {
 				Name string `json:"name"`
 			}{{Name: "BE"}, {Name: "FE"}},
 			Comment: struct {
-				Comments []struct {
-					ID      string      `json:"id"`
-					Author  jira.User   `json:"author"`
-					Body    interface{} `json:"body"`
-					Created string      `json:"created"`
-				} `json:"comments"`
-				Total int `json:"total"`
+				Comments jira.Comments `json:"comments"`
+				Total    int           `json:"total"`
 			}{
 				Comments: []struct {
 					ID      string      `json:"id"`

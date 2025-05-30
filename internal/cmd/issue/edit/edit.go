@@ -18,6 +18,7 @@ import (
 	"github.com/ankitpokhrel/jira-cli/api"
 	"github.com/ankitpokhrel/jira-cli/internal/cmdcommon"
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
+	"github.com/ankitpokhrel/jira-cli/internal/debug"
 	"github.com/ankitpokhrel/jira-cli/internal/query"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter/issue"
@@ -25,7 +26,7 @@ import (
 	"github.com/ankitpokhrel/jira-cli/pkg/surveyext"
 )
 
-var _ = log.Fatal
+var _ = debug.Debug
 
 const (
 	helpText = `Edit an issue in a given project with minimal information.`
@@ -112,6 +113,7 @@ func edit(cmd *cobra.Command, args []string) {
 			originalBody = adf2md.NewTranslator(adfBody, adf2md.NewJiraMarkdownTranslator(
 				adf2md.WithUserEmailResolver(emailResolver),
 			)).Translate()
+
 		} else {
 			originalBody = issue.Fields.Description.(string)
 		}
@@ -127,7 +129,6 @@ func edit(cmd *cobra.Command, args []string) {
 
 			// Convert comment body from ADF to markdown if needed
 			var commentBody string
-			cmdutil.Debug(commentBody)
 			if adfBody, ok := comment.Body.(*adf.ADF); ok {
 				// Create a user email resolver function
 				emailResolver := func(userID string) string {
@@ -155,7 +156,6 @@ func edit(cmd *cobra.Command, args []string) {
 
 	// Parse the edited content back into body and comments
 	if params.body != "" {
-		// Split content by DO NOT EDIT lines
 		separatorPattern := regexp.MustCompile(`(?m)^# DO NOT EDIT THIS LINE - Comment by .* \(.*\)$`)
 		segments := separatorPattern.Split(params.body, -1)
 

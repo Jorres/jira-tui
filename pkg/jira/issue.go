@@ -10,9 +10,10 @@ import (
 
 	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter/issue"
 
+	"md-adf-exp/adf"
+
 	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter"
 	"github.com/ankitpokhrel/jira-cli/pkg/md"
-	"md-adf-exp/adf"
 )
 
 const (
@@ -108,6 +109,9 @@ func (c *Client) getIssueRaw(key, ver string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	// debug.Debug("Fetched raw issue \n", b.String())
+
 	return b.String(), nil
 }
 

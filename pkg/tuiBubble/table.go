@@ -2,12 +2,11 @@ package tuiBubble
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 
 	"github.com/ankitpokhrel/jira-cli/api"
-	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
+	"github.com/ankitpokhrel/jira-cli/internal/debug"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter/issue"
 	"github.com/charmbracelet/bubbles/table"
@@ -15,8 +14,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/viper"
 )
-
-var _ = log.Fatal
 
 const (
 	SorterInactive int = iota
@@ -87,6 +84,12 @@ type Table struct {
 type WidgetSizeMsg struct {
 	Width  int
 	Height int
+}
+
+type CurrentIssueReceivedMsg struct {
+	Table *Table
+	Issue *jira.Issue
+	Pos   int
 }
 
 // TableOption is a functional option to wrap table properties.
@@ -202,7 +205,6 @@ func (t *Table) filterTableData(filterText string) {
 
 	// Special case: when just entered search, we should not
 	// immediately yank all content from under user's nose
-	cmdutil.Debug(filterText)
 	if filterText == "" {
 		t.filteredIssues = t.allIssues
 		return
@@ -214,7 +216,6 @@ func (t *Table) filterTableData(filterText string) {
 			strings.ToLower(filterText),
 		) {
 			t.filteredIssues = append(t.filteredIssues, iss)
-			cmdutil.Debug("including ", iss.Key)
 		}
 	}
 }
@@ -549,7 +550,7 @@ func (t *Table) PrefetchTopIssues() {
 			detailedIssue, err := api.ProxyGetIssue(api.DefaultClient(false), issueKey, issue.NewNumCommentsFilter(10))
 			if err != nil {
 				// Log error but don't panic - just skip this issue
-				log.Printf("Failed to prefetch issue %s: %v", issueKey, err)
+				debug.Debug("Failed to prefetch issue %s: %v", issueKey, err)
 				return
 			}
 
@@ -561,7 +562,7 @@ func (t *Table) PrefetchTopIssues() {
 	wg.Wait()
 }
 
-func (t *Table) GetSelectedIssueShift(shift int) *jira.Issue {
+func (t *Table) GetIssueSync(shift int) *jira.Issue {
 	row := t.GetCursorRow()
 	var issuePool []*jira.Issue
 	if t.SorterState == SorterInactive {
@@ -590,6 +591,47 @@ func (t *Table) GetSelectedIssueShift(shift int) *jira.Issue {
 
 	t.issueCache[key] = iss
 	return iss
+}
+
+func (t *Table) ScheduleIssueUpdateMessage(shift int) tea.Cmd {
+	row := t.GetCursorRow()
+	var issuePool []*jira.Issue
+	if t.SorterState == SorterInactive {
+		issuePool = t.allIssues
+	} else {
+		issuePool = t.filteredIssues
+	}
+	pos := row + shift
+	if pos < 0 {
+		pos = 0
+	}
+	if pos >= len(issuePool) {
+		pos = len(issuePool) - 1
+	}
+
+	key := issuePool[pos].Key
+
+	return func() tea.Msg {
+		if iss, ok := t.issueCache[key]; ok {
+			return CurrentIssueReceivedMsg{
+				Table: t,
+				Issue: iss,
+				Pos:   pos,
+			}
+		}
+
+		iss, err := api.ProxyGetIssue(api.DefaultClient(false), key, issue.NewNumCommentsFilter(10))
+		if err != nil {
+			panic(err)
+		}
+
+		t.issueCache[key] = iss
+		return CurrentIssueReceivedMsg{
+			Table: t,
+			Issue: iss,
+			Pos:   pos,
+		}
+	}
 }
 
 func (t *Table) RefreshCache(issues []*jira.Issue) {

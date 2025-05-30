@@ -2,7 +2,6 @@ package viewBubble
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
+	"github.com/ankitpokhrel/jira-cli/internal/debug"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/ankitpokhrel/jira-cli/pkg/tuiBubble"
 	"github.com/atotto/clipboard"
@@ -20,7 +20,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-var _ = log.Fatal
+var _ = debug.Debug
 
 // TabConfig holds configuration for a single tab
 type TabConfig struct {
@@ -92,7 +92,7 @@ func NewIssueList(
 			l.tables[index] = table
 			l.issueDetailViews[index] = NewIssueModel(l.Server)
 			if len(issues) > 0 {
-				m, _ := l.issueDetailViews[index].Update(table.GetSelectedIssueShift(0))
+				m, _ := l.issueDetailViews[index].Update(table.GetIssueSync(0))
 				l.issueDetailViews[index] = m
 			}
 		}(i, tabConfig)
@@ -134,7 +134,7 @@ func (l *IssueList) Init() tea.Cmd {
 
 func (l *IssueList) forceRedrawCmd() tea.Cmd {
 	return func() tea.Msg {
-		return selectedIssueMsg{issue: l.getCurrentTable().GetSelectedIssueShift(0)}
+		return selectedIssueMsg{issue: l.getCurrentTable().GetIssueSync(0)}
 	}
 }
 
@@ -368,7 +368,14 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch item := msg.item.(type) {
 		case *jira.Issue:
 			epic := item
-			return l, l.assignToEpic(epic.Key, l.getCurrentTable().GetSelectedIssueShift(0))
+			return l, l.assignToEpic(epic.Key, l.getCurrentTable().GetIssueSync(0))
+		}
+	case tuiBubble.CurrentIssueReceivedMsg:
+		currentTable := l.getCurrentTable()
+
+		if msg.Table == currentTable && msg.Pos == currentTable.GetCursorRow() {
+			cmd = l.updateCurrentIssue(msg.Issue)
+			return l, cmd
 		}
 	case tea.KeyMsg:
 		currentTable := l.getCurrentTable()
@@ -399,16 +406,15 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "up", "k":
 			currentTable := l.getCurrentTable()
-			cmd1 := l.updateCurrentIssue(currentTable.GetSelectedIssueShift(-1))
-			var cmd2 tea.Cmd
-			l.tables[l.activeTab], cmd2 = currentTable.Update(msg)
+			var cmd1, cmd2 tea.Cmd
+			cmd1 = currentTable.ScheduleIssueUpdateMessage(-1)
+			l.tables[l.activeTab], cmd = currentTable.Update(msg)
 			return l, tea.Batch(cmd1, cmd2)
 		case "down", "j":
 			currentTable := l.getCurrentTable()
-			cmd1 := l.updateCurrentIssue(currentTable.GetSelectedIssueShift(+1))
-			var cmd2 tea.Cmd
-			l.tables[l.activeTab], cmd2 = currentTable.Update(msg)
-			// debug(l.issueDetailViews[l.activeTab].Data.Fields.Summary)
+			var cmd1, cmd2 tea.Cmd
+			cmd1 = currentTable.ScheduleIssueUpdateMessage(+1)
+			l.tables[l.activeTab], cmd = currentTable.Update(msg)
 			return l, tea.Batch(cmd1, cmd2)
 		case "ctrl+p":
 			// I hate golang, why tf []concrete -> []interface is invalid when concrete satisfies interface...
@@ -421,25 +427,25 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			fz := NewFuzzySelectorFrom(l, l.rawWidth, l.rawHeight, listItems)
 			return fz, nil
 		case "m":
-			return l, l.moveIssue(l.getCurrentTable().GetSelectedIssueShift(0))
+			return l, l.moveIssue(l.getCurrentTable().GetIssueSync(0))
 		case "e":
-			return l, l.editIssue(l.getCurrentTable().GetSelectedIssueShift(0))
+			return l, l.editIssue(l.getCurrentTable().GetIssueSync(0))
 		case "u":
-			iss := l.getCurrentTable().GetSelectedIssueShift(0)
+			iss := l.getCurrentTable().GetIssueSync(0)
 			url := fmt.Sprintf("%s/browse/%s", l.Server, iss.Key)
 			copyToClipboard(url)
 			return l, l.setStatusMessage(fmt.Sprintf("Current issue FQDN copied: %s", url))
 		case "enter":
-			iss := l.getCurrentTable().GetSelectedIssueShift(0)
+			iss := l.getCurrentTable().GetIssueSync(0)
 			cmdutil.Navigate(l.Server, iss.Key)
 			return l, nil
 		case "n":
 			return l, l.createIssue()
 		case "c":
-			return l, l.addComment(l.getCurrentTable().GetSelectedIssueShift(0))
+			return l, l.addComment(l.getCurrentTable().GetIssueSync(0))
 		case "ctrl+r":
 			currentTable := l.getCurrentTable()
-			cmd1 := l.updateCurrentIssue(currentTable.GetSelectedIssueShift(0))
+			cmd1 := l.updateCurrentIssue(currentTable.GetIssueSync(0))
 			var cmd2 tea.Cmd
 			l.tables[l.activeTab], cmd2 = currentTable.Update(msg)
 			return l, tea.Batch(cmd1, cmd2)
