@@ -22,7 +22,7 @@ func (c *Client) EpicIssues(key, jql string, from, limit uint) (*SearchResult, e
 		path += fmt.Sprintf("&jql=%s", url.QueryEscape(jql))
 	}
 
-	res, err := c.GetV1(context.Background(), path, nil)
+	res, err := c.GetV1Agile(context.Background(), path, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -27,7 +27,7 @@ type SprintResult struct {
 //
 // qp is an additional query parameters in key, value pair format, eg: state=closed.
 func (c *Client) Sprints(boardID int, qp string, from, limit int) (*SprintResult, error) {
-	res, err := c.GetV1(
+	res, err := c.GetV1Agile(
 		context.Background(),
 		fmt.Sprintf("/board/%d/sprint?%s&startAt=%d&maxResults=%d", boardID, qp, from, limit),
 		nil,
@@ -53,7 +53,7 @@ func (c *Client) Sprints(boardID int, qp string, from, limit int) (*SprintResult
 
 // GetSprint returns a single sprint given an ID.
 func (c *Client) GetSprint(sprintID int) (*Sprint, error) {
-	res, err := c.GetV1(
+	res, err := c.GetV1Agile(
 		context.Background(),
 		fmt.Sprintf("/sprint/%d", sprintID),
 		nil,
@@ -171,7 +171,7 @@ func (c *Client) SprintIssues(sprintID int, jql string, from, limit uint) (*Sear
 		path += fmt.Sprintf("&jql=%s", url.QueryEscape(jql))
 	}
 
-	res, err := c.GetV1(context.Background(), path, nil)
+	res, err := c.GetV1Agile(context.Background(), path, nil)
 	if err != nil {
 		return nil, err
 	}

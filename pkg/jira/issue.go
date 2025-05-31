@@ -424,6 +424,43 @@ func (c *Client) GetCustomFields() ([]*Field, error) {
 	return customFields, nil
 }
 
+// GetAutocompleteSuggestions gets autocomplete suggestions from the provided URL with query prefix.
+func (c *Client) GetAutocompleteSuggestions(autocompleteUrl, query string) ([]string, error) {
+	// Extract the path from the full URL - remove the server part
+	// autocompleteUrl is like: "https://nebius.atlassian.net/rest/api/1.0/labels/4926048/suggest?customFieldId=12891&query="
+	// We need to extract: "/rest/api/1.0/labels/4926048/suggest?customFieldId=12891&query="
+	serverPrefix := c.server
+	if !strings.HasPrefix(autocompleteUrl, serverPrefix) {
+		return nil, fmt.Errorf("autocomplete URL does not match server: %s", autocompleteUrl)
+	}
+
+	path := strings.TrimPrefix(autocompleteUrl, serverPrefix) + query
+
+	res, err := c.GetV1Api(context.Background(), strings.TrimPrefix(path, "/rest/api/1.0"), nil)
+	if err != nil {
+		return nil, err
+	}
+	if res == nil {
+		return nil, ErrEmptyResponse
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	var response AutocompleteResponse
+	err = json.NewDecoder(res.Body).Decode(&response)
+	if err != nil {
+		debug.Debug(err)
+		return nil, err
+	}
+
+	// Extract just the labels from suggestions
+	var suggestions []string
+	for _, suggestion := range response.Suggestions {
+		suggestions = append(suggestions, suggestion.Label)
+	}
+
+	return suggestions, nil
+}
+
 func ifaceToADF(v interface{}) *adf.ADF {
 	if v == nil {
 		return nil

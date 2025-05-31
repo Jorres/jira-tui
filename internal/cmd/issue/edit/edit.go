@@ -395,7 +395,7 @@ func getAnswers(client *jira.Client, params *editParams, issue *jira.Issue) {
 				for _, v := range ans.Metadata {
 					keys = append(keys, v)
 				}
-				qs := getEditMetadataQuestions(keys, customFields, issue, editMetadata)
+				qs := getEditMetadataQuestions(keys, customFields, issue, editMetadata, client, params.issueKey)
 				ans := make(map[string]any)
 
 				err := survey.Ask(qs, &ans, defaultSurveyOptions()...)
@@ -581,7 +581,7 @@ func parseArgsAndFlags(flags query.FlagParser, args []string, project string) *e
 	}
 }
 
-func getEditMetadataQuestions(meta []string, customFields []*jira.Field, issue *jira.Issue, editMetadata *jira.EditMetadata) []*survey.Question {
+func getEditMetadataQuestions(meta []string, customFields []*jira.Field, issue *jira.Issue, editMetadata *jira.EditMetadata, client *jira.Client, issueKey string) []*survey.Question {
 	var qs []*survey.Question
 
 	fixVersions := make([]string, 0, len(issue.Fields.FixVersions))
@@ -597,6 +597,28 @@ func getEditMetadataQuestions(meta []string, customFields []*jira.Field, issue *
 	customFieldMap := make(map[string]*jira.Field)
 	for _, field := range customFields {
 		customFieldMap[field.Name] = field
+	}
+
+	// Get autocomplete URLs for custom fields
+	var customFieldIds []string
+	for _, name := range meta {
+		if customField, ok := customFieldMap[name]; ok {
+			customFieldIds = append(customFieldIds, customField.ID)
+		}
+	}
+
+	// Fetch autocomplete URLs if we have custom fields
+	var autocompleteUrls map[string]string
+	if len(customFieldIds) > 0 {
+		autocompleteMetadata, err := client.GetEditMetadataWithFields(issueKey, customFieldIds)
+		if err == nil && autocompleteMetadata != nil {
+			autocompleteUrls = make(map[string]string)
+			for fieldId, fieldMeta := range autocompleteMetadata.Fields {
+				if fieldMeta.AutoCompleteUrl != "" {
+					autocompleteUrls[fieldId] = fieldMeta.AutoCompleteUrl
+				}
+			}
+		}
 	}
 
 	for _, name := range meta {
@@ -643,14 +665,29 @@ func getEditMetadataQuestions(meta []string, customFields []*jira.Field, issue *
 			})
 		default:
 			if customField, ok := customFieldMap[name]; ok {
+				inputPrompt := &survey.Input{
+					Message: customField.Name,
+					Help:    "Sorry, no help for custom fields",
+					Default: "",
+					// Maybe I don't even need it, if I'm not going to send it? :)
+					// Default: issue.Fields.CustomFields[customField.ID],
+				}
+
+				// Add autocomplete if available
+				if autocompleteUrl, hasAutocomplete := autocompleteUrls[customField.ID]; hasAutocomplete {
+					inputPrompt.Suggest = func(toComplete string) []string {
+						suggestions, err := client.GetAutocompleteSuggestions(autocompleteUrl, toComplete)
+						if err != nil {
+							// If autocomplete fails, return empty suggestions
+							return []string{}
+						}
+						return suggestions
+					}
+				}
+
 				qs = append(qs, &survey.Question{
-					Name: customField.ID,
-					Prompt: &survey.Input{
-						Message: customField.Name,
-						Help:    "Sorry, no help for custom fields",
-						Default: "",
-						// Default: issue.Fields.CustomFields[customField.ID],
-					},
+					Name:   customField.ID,
+					Prompt: inputPrompt,
 				})
 			}
 		}

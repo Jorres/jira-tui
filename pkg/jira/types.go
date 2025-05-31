@@ -203,7 +203,7 @@ type FieldMetadata struct {
 	Operations      []string      `json:"operations"`
 	Required        bool          `json:"required"`
 	Schema          FieldSchema   `json:"schema"`
-	AllowedValues   []interface{} `json:"allowedValues,omitempty"`
+	AllowedValues   []interface{} `json:"allowedValues"`
 	AutoCompleteUrl string        `json:"autoCompleteUrl,omitempty"`
 	Configuration   interface{}   `json:"configuration,omitempty"`
 	DefaultValue    interface{}   `json:"defaultValue,omitempty"`
@@ -218,4 +218,16 @@ type FieldSchema struct {
 	Items         string      `json:"items,omitempty"`
 	System        string      `json:"system,omitempty"`
 	Configuration interface{} `json:"configuration,omitempty"`
+}
+
+// AutocompleteSuggestion holds a single autocomplete suggestion.
+type AutocompleteSuggestion struct {
+	Label string `json:"label"`
+	HTML  string `json:"html"`
+}
+
+// AutocompleteResponse holds the response from autocomplete API.
+type AutocompleteResponse struct {
+	Token       string                   `json:"token"`
+	Suggestions []AutocompleteSuggestion `json:"suggestions"`
 }

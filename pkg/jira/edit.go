@@ -564,3 +564,29 @@ func (c *Client) GetEditMetadata(key string) (*EditMetadata, error) {
 
 	return &out, err
 }
+
+// GetEditMetadataWithFields returns the metadata about specified fields for issue editing
+// using GET /issue/{issueId}?expand=editmeta&fields={fieldIds} handler.
+func (c *Client) GetEditMetadataWithFields(key string, fieldIds []string) (*EditMetadata, error) {
+	queryParams := "?expand=editmeta&fields=" + strings.Join(fieldIds, ",")
+
+	res, err := c.Get(context.Background(), "/issue/"+key+queryParams, nil)
+	if err != nil {
+		return nil, err
+	}
+	if res == nil {
+		return nil, ErrEmptyResponse
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	var response struct {
+		EditMeta EditMetadata `json:"editmeta"`
+	}
+
+	err = json.NewDecoder(res.Body).Decode(&response)
+	if err != nil {
+		return nil, err
+	}
+
+	return &response.EditMeta, nil
+}

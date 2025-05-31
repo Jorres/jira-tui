@@ -39,7 +39,7 @@ func (c *Client) BoardSearch(project, name string) (*BoardResult, error) {
 }
 
 func (c *Client) board(path string) (*BoardResult, error) {
-	res, err := c.GetV1(context.Background(), path, nil)
+	res, err := c.GetV1Agile(context.Background(), path, nil)
 	if err != nil {
 		return nil, err
 	}

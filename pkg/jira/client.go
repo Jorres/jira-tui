@@ -27,9 +27,10 @@ const (
 	// InstallationTypeLocal represents on-premise Jira servers.
 	InstallationTypeLocal = "Local"
 
-	baseURLv3 = "/rest/api/3"
-	baseURLv2 = "/rest/api/2"
-	baseURLv1 = "/rest/agile/1.0"
+	baseURLv3      = "/rest/api/3"
+	baseURLv2      = "/rest/api/2"
+	baseURLAgilev1 = "/rest/agile/1.0"
+	baseURLApiv1   = "/rest/api/1.0"
 
 	apiVersion2 = "v2"
 	apiVersion3 = "v3"
@@ -204,9 +205,14 @@ func (c *Client) GetV2(ctx context.Context, path string, headers Header) (*http.
 	return c.request(ctx, http.MethodGet, c.server+baseURLv2+path, nil, headers)
 }
 
-// GetV1 sends get request to v1 version of the jira api.
-func (c *Client) GetV1(ctx context.Context, path string, headers Header) (*http.Response, error) {
-	return c.request(ctx, http.MethodGet, c.server+baseURLv1+path, nil, headers)
+// GetV1Agile sends get request to v1 version of the jira api.
+func (c *Client) GetV1Agile(ctx context.Context, path string, headers Header) (*http.Response, error) {
+	return c.request(ctx, http.MethodGet, c.server+baseURLAgilev1+path, nil, headers)
+}
+
+// GetV1Api sends get request to v1 version of the jira api.
+func (c *Client) GetV1Api(ctx context.Context, path string, headers Header) (*http.Response, error) {
+	return c.request(ctx, http.MethodGet, c.server+baseURLApiv1+path, nil, headers)
 }
 
 // Post sends POST request to v3 version of the jira api.
@@ -221,7 +227,7 @@ func (c *Client) PostV2(ctx context.Context, path string, body []byte, headers H
 
 // PostV1 sends POST request to v1 version of the jira api.
 func (c *Client) PostV1(ctx context.Context, path string, body []byte, headers Header) (*http.Response, error) {
-	return c.request(ctx, http.MethodPost, c.server+baseURLv1+path, body, headers)
+	return c.request(ctx, http.MethodPost, c.server+baseURLAgilev1+path, body, headers)
 }
 
 // Put sends PUT request to v3 version of the jira api.
@@ -236,7 +242,7 @@ func (c *Client) PutV2(ctx context.Context, path string, body []byte, headers He
 
 // PutV1 sends PUT request to v1 version of the jira api.
 func (c *Client) PutV1(ctx context.Context, path string, body []byte, headers Header) (*http.Response, error) {
-	return c.request(ctx, http.MethodPut, c.server+baseURLv1+path, body, headers)
+	return c.request(ctx, http.MethodPut, c.server+baseURLAgilev1+path, body, headers)
 }
 
 // DeleteV2 sends DELETE request to v2 version of the jira api.
