@@ -47,7 +47,7 @@ func TestGetV1(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(Config{Server: server.URL}, WithTimeout(3*time.Second))
-	resp, err := client.GetV1(context.Background(), "/epic/TEST-1/issue?jql=project=TEST%20AND%20status=Done", nil)
+	resp, err := client.GetV1Agile(context.Background(), "/epic/TEST-1/issue?jql=project=TEST%20AND%20status=Done", nil)
 
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)

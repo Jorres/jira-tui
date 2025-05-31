@@ -769,8 +769,8 @@ func convertMarkdownToADF(body string, client *jira.Client, project string) (str
 	}
 
 	// Convert markdown to ADF using the translator
-	translator := md2adf.NewTranslator()
-	adfDoc, err := translator.TranslateToADF([]byte(body), userMapping)
+	translator := md2adf.NewTranslator(md2adf.WithUserEmailMapping(userMapping))
+	adfDoc, err := translator.TranslateToADF([]byte(body))
 	if err != nil {
 		return "", fmt.Errorf("failed to convert markdown to ADF: %w", err)
 	}

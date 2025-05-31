@@ -518,8 +518,7 @@ func constructCustomFieldsForEdit(fields map[string]string, configuredFields []I
 					data.Fields.M.customFields[configured.Key] = []customFieldTypeNumberSet{{Set: customFieldTypeNumber(num)}}
 				}
 			default:
-				// TODO make user email parameter an option to the constructor
-				val, _ := md2adf.NewTranslator().TranslateToADF([]byte(val), make(map[string]string))
+				val, _ := md2adf.NewTranslator().TranslateToADF([]byte(val))
 				data.Fields.M.customFields[configured.Key] = val
 				// TODO we lost compatibility with v2 api here
 			}
