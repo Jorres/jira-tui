@@ -69,7 +69,6 @@ func (c *Client) Edit(key string, req *EditRequest) error {
 		return err
 	}
 
-	debug.Debug("before sending", string(body))
 	res, err := c.Put(context.Background(), "/issue/"+key, body, Header{
 		"Accept":       "application/json",
 		"Content-Type": "application/json",
@@ -544,4 +543,24 @@ func splitAddAndRemove(input []string) ([]string, []string) {
 	}
 
 	return add, sub
+}
+
+// EditMetadata returns the metadata about fields visible to the user on issue editing screen
+// using GET /issue/{issueId}/editmeta handler.
+func (c *Client) GetEditMetadata(key string) (*EditMetadata, error) {
+	res, err := c.Get(context.Background(), "/issue/"+key+"/editmeta", nil)
+	if err != nil {
+		debug.Fatal("error getting metadata of issue ", key, err)
+		return nil, err
+	}
+	if res == nil {
+		return nil, ErrEmptyResponse
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	var out EditMetadata
+
+	err = json.NewDecoder(res.Body).Decode(&out)
+
+	return &out, err
 }

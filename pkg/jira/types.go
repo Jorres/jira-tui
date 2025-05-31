@@ -190,3 +190,32 @@ type User struct {
 	DisplayName string `json:"displayName"`
 	Active      bool   `json:"active"`
 }
+
+// EditMetadata holds edit metadata response from Jira API.
+type EditMetadata struct {
+	Fields map[string]FieldMetadata `json:"fields"`
+}
+
+// FieldMetadata holds metadata about a field that can be edited.
+type FieldMetadata struct {
+	Key             string        `json:"key"`
+	Name            string        `json:"name"`
+	Operations      []string      `json:"operations"`
+	Required        bool          `json:"required"`
+	Schema          FieldSchema   `json:"schema"`
+	AllowedValues   []interface{} `json:"allowedValues,omitempty"`
+	AutoCompleteUrl string        `json:"autoCompleteUrl,omitempty"`
+	Configuration   interface{}   `json:"configuration,omitempty"`
+	DefaultValue    interface{}   `json:"defaultValue,omitempty"`
+	HasDefaultValue bool          `json:"hasDefaultValue,omitempty"`
+}
+
+// FieldSchema holds schema information for a field.
+type FieldSchema struct {
+	Type          string      `json:"type"`
+	Custom        string      `json:"custom,omitempty"`
+	CustomId      int         `json:"customId,omitempty"`
+	Items         string      `json:"items,omitempty"`
+	System        string      `json:"system,omitempty"`
+	Configuration interface{} `json:"configuration,omitempty"`
+}

@@ -10,6 +10,7 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"golang.org/x/term"
 
 	"md-adf-exp/adf"
 	"md-adf-exp/adf2md"
@@ -301,10 +302,24 @@ func edit(cmd *cobra.Command, args []string) {
 	}
 }
 
+func defaultSurveyOptions() []survey.AskOpt {
+	_, height, _ := term.GetSize(int(os.Stdout.Fd()))
+	return []survey.AskOpt{
+		survey.WithRemoveSelectNone(),
+		survey.WithRemoveSelectAll(),
+		survey.WithKeepFilter(true),
+		survey.WithPageSize(height - 10),
+	}
+}
+
 func getAnswers(client *jira.Client, params *editParams, issue *jira.Issue) {
 	answer := struct{ Action string }{}
 	for answer.Action != cmdcommon.ActionSubmit {
-		err := survey.Ask([]*survey.Question{cmdcommon.GetNextAction()}, &answer)
+		err := survey.Ask(
+			[]*survey.Question{cmdcommon.GetNextAction()},
+			&answer,
+			defaultSurveyOptions()...,
+		)
 		cmdutil.ExitIfError(err)
 
 		switch answer.Action {
@@ -312,11 +327,66 @@ func getAnswers(client *jira.Client, params *editParams, issue *jira.Issue) {
 			cmdutil.Failed("Action aborted")
 		case cmdcommon.ActionMetadata:
 			ans := struct{ Metadata []string }{}
-			customFields, err := client.GetCustomFields()
+			editMetadata, err := client.GetEditMetadata(params.issueKey)
 			if err != nil {
-				panic("failed to get custom fields")
+				panic("failed to get edit metadata")
 			}
-			err = survey.Ask(cmdcommon.GetMetadata(customFields), &ans)
+
+			// Convert EditMetadata to []*Field format for compatibility
+			var customFields []*jira.Field
+			for _, fieldMeta := range editMetadata.Fields {
+				if fieldMeta.Schema.Custom != "" { // Only include custom fields
+					customFields = append(customFields, &jira.Field{
+						ID:     fieldMeta.Key,
+						Name:   fieldMeta.Name,
+						Custom: true,
+						Schema: struct {
+							DataType string `json:"type"`
+							Items    string `json:"items,omitempty"`
+							FieldID  int    `json:"customId,omitempty"`
+						}{
+							DataType: fieldMeta.Schema.Type,
+							Items:    fieldMeta.Schema.Items,
+							FieldID:  fieldMeta.Schema.CustomId,
+						},
+					})
+				}
+			}
+
+			// Create a custom metadata question that only includes editable fields
+			var metadataOptions []string
+			if _, exists := editMetadata.Fields["priority"]; exists {
+				metadataOptions = append(metadataOptions, "Priority")
+			}
+			if _, exists := editMetadata.Fields["components"]; exists {
+				metadataOptions = append(metadataOptions, "Components")
+			}
+			if _, exists := editMetadata.Fields["labels"]; exists {
+				metadataOptions = append(metadataOptions, "Labels")
+			}
+			if _, exists := editMetadata.Fields["fixVersions"]; exists {
+				metadataOptions = append(metadataOptions, "FixVersions")
+			}
+			if _, exists := editMetadata.Fields["versions"]; exists {
+				metadataOptions = append(metadataOptions, "AffectsVersions")
+			}
+
+			// Add custom fields to options
+			for _, field := range customFields {
+				metadataOptions = append(metadataOptions, field.Name)
+			}
+
+			metadataQuestion := []*survey.Question{
+				{
+					Name: "metadata",
+					Prompt: &survey.MultiSelect{
+						Message: "What would you like to add?",
+						Options: metadataOptions,
+					},
+				},
+			}
+
+			err = survey.Ask(metadataQuestion, &ans, defaultSurveyOptions()...)
 
 			cmdutil.ExitIfError(err)
 
@@ -325,10 +395,10 @@ func getAnswers(client *jira.Client, params *editParams, issue *jira.Issue) {
 				for _, v := range ans.Metadata {
 					keys = append(keys, v)
 				}
-				qs := getMetadataQuestions(keys, customFields, issue)
+				qs := getEditMetadataQuestions(keys, customFields, issue, editMetadata)
 				ans := make(map[string]any)
 
-				err := survey.Ask(qs, &ans)
+				err := survey.Ask(qs, &ans, defaultSurveyOptions()...)
 				cmdutil.ExitIfError(err)
 
 				if priority, ok := ans["Priority"].(string); ok && priority != "" {
@@ -418,7 +488,7 @@ func (ec *editCmd) askQuestions(issue *jira.Issue, originalBody string) error {
 	}
 
 	ans := struct{ Summary, Body string }{}
-	err := survey.Ask(qs, &ans)
+	err := survey.Ask(qs, &ans, defaultSurveyOptions()...)
 	if err != nil {
 		return err
 	}
@@ -511,7 +581,7 @@ func parseArgsAndFlags(flags query.FlagParser, args []string, project string) *e
 	}
 }
 
-func getMetadataQuestions(meta []string, customFields []*jira.Field, issue *jira.Issue) []*survey.Question {
+func getEditMetadataQuestions(meta []string, customFields []*jira.Field, issue *jira.Issue, editMetadata *jira.EditMetadata) []*survey.Question {
 	var qs []*survey.Question
 
 	fixVersions := make([]string, 0, len(issue.Fields.FixVersions))
