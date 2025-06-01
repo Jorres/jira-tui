@@ -471,7 +471,7 @@ func (l *IssueList) View() string {
 
 	currentTable := l.getCurrentTable()
 	if currentTable == nil {
-		panic("AAA")
+		panic("no current table configured, should not happen")
 	}
 	currentView := l.getCurrentIssueDetailView()
 

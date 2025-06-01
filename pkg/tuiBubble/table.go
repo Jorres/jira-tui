@@ -134,7 +134,7 @@ func NewTable(opts ...TableOption) *Table {
 		BorderBottom(true).
 		Bold(true).
 		Foreground(lipgloss.Color("15")).
-		Background(lipgloss.Color("24"))
+		Background(lipgloss.Color("240"))
 
 	// Set selection colors based on provided style
 	if t.style.SelectionBackground != "" {

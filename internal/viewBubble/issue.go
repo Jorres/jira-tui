@@ -556,12 +556,11 @@ func (iss IssueModel) Update(msg tea.Msg) (IssueModel, tea.Cmd) {
 func (iss *IssueModel) calculateViewportDimensions() {
 	// Calculate viewport with 10% margins
 	iss.viewportWidth = int(float32(iss.RawWidth) * 0.9)
-	// iss.viewportHeight = int(float32(iss.RawHeight) * 0.9)
-	iss.viewportHeight = iss.RawHeight - 2
 	iss.marginWidth = (iss.RawWidth - iss.viewportWidth) / 2
-	iss.marginHeight = (iss.RawHeight - iss.viewportHeight) / 2
-	// Available content height (subtract 2 for border)
-	iss.contentHeight = iss.viewportHeight - 2
+
+	iss.viewportHeight = iss.RawHeight - 1
+	iss.marginHeight = 1
+	iss.contentHeight = iss.viewportHeight
 }
 
 // scrollDown scrolls the content down by configured scroll size
@@ -658,6 +657,46 @@ func (iss *IssueModel) getVisibleLines() string {
 	return strings.Join(visibleLines, "\n")
 }
 
+// generateScrollbar creates a vertical scrollbar representation
+func (iss *IssueModel) generateScrollbar() (string, bool) {
+	needsScrollbar := len(iss.renderedLines) > iss.contentHeight
+
+	// Always generate a column for consistent positioning
+	var scrollbar strings.Builder
+	for i := 0; i < iss.contentHeight; i++ {
+		if needsScrollbar {
+			totalLines := len(iss.renderedLines)
+			viewportSize := iss.contentHeight
+
+			// Calculate the proportion of content that is visible
+			visibleProportion := float64(viewportSize) / float64(totalLines)
+
+			// Calculate the size of the bright section (thumb)
+			thumbSize := int(visibleProportion * float64(iss.contentHeight))
+			if thumbSize < 1 {
+				thumbSize = 1
+			}
+
+			// Calculate the position of the thumb
+			scrollProgress := float64(iss.firstVisibleLine) / float64(totalLines-viewportSize)
+			thumbPosition := int(scrollProgress * float64(iss.contentHeight-thumbSize))
+
+			if i >= thumbPosition && i < thumbPosition+thumbSize {
+				scrollbar.WriteString("█") // Bright block for visible portion
+			} else {
+				scrollbar.WriteString("▓") // Dim block for non-visible portion
+			}
+		} else {
+			scrollbar.WriteString(" ") // Empty space when no scrollbar needed
+		}
+		if i < iss.contentHeight-1 {
+			scrollbar.WriteString("\n")
+		}
+	}
+
+	return scrollbar.String(), needsScrollbar
+}
+
 // View renders the IssueList.
 func (iss IssueModel) View() string {
 	// Show placeholder if no issue data is available
@@ -683,15 +722,44 @@ func (iss IssueModel) View() string {
 		out = strings.ReplaceAll(out, iss.uniqueLinkTextReplacement, coloredText)
 	}
 
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
+	// Generate scrollbar
+	scrollbar, needsScrollbar := iss.generateScrollbar()
+
+	// Create scrollbar style - bright blocks match border color, dim blocks stay gray
+	var scrollbarStyle lipgloss.Style
+	if needsScrollbar {
+		scrollbarStyle = lipgloss.NewStyle().
+			Height(iss.contentHeight).
+			Align(lipgloss.Center, lipgloss.Top).
+			Foreground(lipgloss.Color("240")). // Gray for dim blocks
+			Transform(func(s string) string {
+				// Replace bright blocks with border color
+				return strings.ReplaceAll(s, "█", lipgloss.NewStyle().Foreground(lipgloss.Color("62")).Render("█"))
+			})
+	} else {
+		scrollbarStyle = lipgloss.NewStyle().
+			Height(iss.contentHeight).
+			Align(lipgloss.Center, lipgloss.Top)
+	}
+
+	// Create content box without margins (we'll apply them to the combined view)
+	contentBoxStyle := lipgloss.NewStyle().
 		Width(iss.viewportWidth).
 		Height(iss.viewportHeight).
-		Margin(iss.marginHeight, iss.marginWidth).
-		Align(lipgloss.Center, lipgloss.Top) // Change alignment to show content from top
+		Align(lipgloss.Center, lipgloss.Top)
 
-	return boxStyle.Render(out)
+	// Combine scrollbar and content horizontally
+	contentWithScrollbar := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		scrollbarStyle.Render(scrollbar),
+		contentBoxStyle.Render(out),
+	)
+
+	// Apply margins to the combined view
+	finalStyle := lipgloss.NewStyle().
+		Margin(iss.marginHeight, iss.marginWidth, 0)
+
+	return finalStyle.Render(contentWithScrollbar)
 }
 
 func (iss *IssueModel) ResetResetables() {
