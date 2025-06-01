@@ -47,14 +47,13 @@ func TestGetIssue(t *testing.T) {
 		Key: "TEST-1",
 		Fields: IssueFields{
 			Summary: "Bug summary",
-			Description: &adf.ADF{
-				Version: 1,
-				DocType: "doc",
-				Content: []*adf.Node{
+			Description: &adf.ADFNode{
+				Type: "doc",
+				Content: []*adf.ADFNode{
 					{
-						NodeType: "paragraph",
-						Content: []*adf.Node{
-							{NodeType: "text", NodeValue: adf.NodeValue{Text: "Test description"}},
+						Type: "paragraph",
+						Content: []*adf.ADFNode{
+							{Type: "text", Text: "Test description"},
 						},
 					},
 				},
@@ -123,7 +122,7 @@ func TestGetIssueWithoutDescription(t *testing.T) {
 	actual, err := client.GetIssue("TEST-1")
 	assert.NoError(t, err)
 
-	var nilADF *adf.ADF
+	var nilADF *adf.ADFNode
 	expected := &Issue{
 		Key: "TEST-1",
 		Fields: IssueFields{

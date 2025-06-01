@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ankitpokhrel/jira-cli/internal/debug"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter/issue"
 
 	"md-adf-exp/adf"
@@ -448,7 +447,6 @@ func (c *Client) GetAutocompleteSuggestions(autocompleteUrl, query string) ([]st
 	var response AutocompleteResponse
 	err = json.NewDecoder(res.Body).Decode(&response)
 	if err != nil {
-		debug.Debug(err)
 		return nil, err
 	}
 
@@ -461,12 +459,12 @@ func (c *Client) GetAutocompleteSuggestions(autocompleteUrl, query string) ([]st
 	return suggestions, nil
 }
 
-func ifaceToADF(v interface{}) *adf.ADF {
+func ifaceToADF(v interface{}) *adf.ADFNode {
 	if v == nil {
 		return nil
 	}
 
-	var doc *adf.ADF
+	var doc *adf.ADFNode
 
 	js, err := json.Marshal(v)
 	if err != nil {

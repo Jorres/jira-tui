@@ -96,17 +96,20 @@ func edit(cmd *cobra.Command, args []string) {
 		originalBody string
 	)
 
-	if issue.Fields.Description != nil {
-		if adfBody, ok := issue.Fields.Description.(*adf.ADF); ok {
-			isADF = true
-			// Create a user email resolver function
-			emailResolver := func(userID string) string {
-				return resolveUserIDToEmail(userID, client, project)
-			}
-			originalBody = adf2md.NewTranslator(adfBody, adf2md.NewJiraMarkdownTranslator(
-				adf2md.WithUserEmailResolver(emailResolver),
-			)).Translate()
+	var reverseTranslator *adf2md.Translator
+	// Create a user email resolver function
+	emailResolver := func(userID string) string {
+		return resolveUserIDToEmail(userID, client, project)
+	}
 
+	reverseTranslator = adf2md.NewTranslator(adf2md.NewJiraMarkdownTranslator(
+		adf2md.WithUserEmailResolver(emailResolver),
+	))
+
+	if issue.Fields.Description != nil {
+		if adfBody, ok := issue.Fields.Description.(*adf.ADFNode); ok {
+			isADF = true
+			originalBody = reverseTranslator.Translate(adfBody)
 		} else {
 			originalBody = issue.Fields.Description.(string)
 		}
@@ -128,14 +131,8 @@ func edit(cmd *cobra.Command, args []string) {
 
 			// Convert comment body from ADF to markdown if needed
 			var commentBody string
-			if adfBody, ok := comment.Body.(*adf.ADF); ok {
-				// Create a user email resolver function
-				emailResolver := func(userID string) string {
-					return resolveUserIDToEmail(userID, client, project)
-				}
-				commentBody = adf2md.NewTranslator(adfBody, adf2md.NewJiraMarkdownTranslator(
-					adf2md.WithUserEmailResolver(emailResolver),
-				)).Translate()
+			if adfBody, ok := comment.Body.(*adf.ADFNode); ok {
+				commentBody = reverseTranslator.Translate(adfBody)
 			} else {
 				commentBody = comment.Body.(string)
 			}
@@ -229,7 +226,7 @@ func edit(cmd *cobra.Command, args []string) {
 		body := params.body
 		bodyIsRawADF := false
 		if isADF && body != "" {
-			adfBody, convErr := convertMarkdownToADF(body, client, project)
+			adfBody, convErr := convertMarkdownToADF(body, client, project, reverseTranslator)
 			if convErr != nil {
 				panic("convertion to ADF should always succeed. If it fails, something isn't supported in converter yet")
 			} else {
@@ -247,7 +244,7 @@ func edit(cmd *cobra.Command, args []string) {
 			commentBodyIsRawADF := false
 
 			if isADF && commentBody != "" {
-				adfBody, convErr := convertMarkdownToADF(commentBody, client, project)
+				adfBody, convErr := convertMarkdownToADF(commentBody, client, project, reverseTranslator)
 				if convErr != nil {
 					panic("conversion to ADF should always succeed. If it fails, something isn't supported in converter yet")
 				} else {
@@ -752,7 +749,7 @@ func resolveUserIDs(emails []string, client *jira.Client, project string) (map[s
 }
 
 // convertMarkdownToADF converts markdown to ADF JSON string if mentions are found
-func convertMarkdownToADF(body string, client *jira.Client, project string) (string, error) {
+func convertMarkdownToADF(body string, client *jira.Client, project string, reverseTranslator *adf2md.Translator) (string, error) {
 	var userMapping map[string]string
 
 	emails := extractEmailsFromMarkdown(body)
@@ -769,7 +766,10 @@ func convertMarkdownToADF(body string, client *jira.Client, project string) (str
 	}
 
 	// Convert markdown to ADF using the translator
-	translator := md2adf.NewTranslator(md2adf.WithUserEmailMapping(userMapping))
+	translator := md2adf.NewTranslator(
+		md2adf.WithUserEmailMapping(userMapping),
+		md2adf.WithAdf2MdTranslator(reverseTranslator),
+	)
 	adfDoc, err := translator.TranslateToADF([]byte(body))
 	if err != nil {
 		return "", fmt.Errorf("failed to convert markdown to ADF: %w", err)

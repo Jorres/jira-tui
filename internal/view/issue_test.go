@@ -23,14 +23,13 @@ func TestIssueDetailsRenderInPlainView(t *testing.T) {
 			Resolution: struct {
 				Name string `json:"name"`
 			}{Name: "Fixed"},
-			Description: &adf.ADF{
-				Version: 1,
-				DocType: "doc",
-				Content: []*adf.Node{
+			Description: &adf.ADFNode{
+				Type: "doc",
+				Content: []*adf.ADFNode{
 					{
-						NodeType: "paragraph",
-						Content: []*adf.Node{
-							{NodeType: "text", NodeValue: adf.NodeValue{Text: "Test description"}},
+						Type: "paragraph",
+						Content: []*adf.ADFNode{
+							{Type: "text", Text: "Test description"},
 						},
 					},
 				},

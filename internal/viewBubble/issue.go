@@ -233,8 +233,8 @@ func (i *IssueModel) description() string {
 
 	var desc string
 
-	if adfNode, ok := i.Data.Fields.Description.(*adf.ADF); ok {
-		desc = adf2md.NewTranslator(adfNode, adf2md.NewMarkdownTranslator()).Translate()
+	if adfNode, ok := i.Data.Fields.Description.(*adf.ADFNode); ok {
+		desc = adf2md.NewTranslator(adf2md.NewMarkdownTranslator()).Translate(adfNode)
 	} else {
 		desc = i.Data.Fields.Description.(string)
 		desc = md.FromJiraMD(desc)
@@ -453,8 +453,8 @@ func (i *IssueModel) comments() []issueComment {
 	for idx := total - 1; idx >= total-limit; idx-- {
 		c := i.Data.Fields.Comment.Comments[idx]
 		var body string
-		if adfNode, ok := c.Body.(*adf.ADF); ok {
-			body = adf2md.NewTranslator(adfNode, adf2md.NewMarkdownTranslator()).Translate()
+		if adfNode, ok := c.Body.(*adf.ADFNode); ok {
+			body = adf2md.NewTranslator(adf2md.NewMarkdownTranslator()).Translate(adfNode)
 		} else {
 			body = c.Body.(string)
 			body = md.FromJiraMD(body)

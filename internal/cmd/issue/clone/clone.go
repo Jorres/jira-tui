@@ -11,8 +11,8 @@ import (
 	"github.com/ankitpokhrel/jira-cli/api"
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
 	"github.com/ankitpokhrel/jira-cli/internal/query"
-	"md-adf-exp/adf"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
+	"md-adf-exp/adf"
 )
 
 const (
@@ -201,7 +201,7 @@ func (cc *cloneCmd) getActualCreateParams(project string, issue *jira.Issue) *cr
 	)
 
 	if issue.Fields.Description != nil {
-		body, isADF = issue.Fields.Description.(*adf.ADF)
+		body, isADF = issue.Fields.Description.(*adf.ADFNode)
 		if !isADF {
 			body = issue.Fields.Description.(string)
 		}
@@ -221,7 +221,7 @@ func (cc *cloneCmd) getActualCreateParams(project string, issue *jira.Issue) *cr
 				cp.summary = strings.ReplaceAll(cp.summary, from, to)
 
 				if isADF {
-					body.(*adf.ADF).ReplaceAll(from, to)
+					body.(*adf.ADFNode).ReplaceAll(from, to)
 				} else {
 					body = strings.ReplaceAll(body.(string), from, to)
 				}
