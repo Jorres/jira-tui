@@ -11,7 +11,6 @@ import (
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
 	"github.com/ankitpokhrel/jira-cli/internal/debug"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
-	"github.com/ankitpokhrel/jira-cli/pkg/tuiBubble"
 	"github.com/atotto/clipboard"
 	"github.com/spf13/viper"
 
@@ -25,6 +24,7 @@ var _ = debug.Debug
 // TabConfig holds configuration for a single tab
 type TabConfig struct {
 	Name        string
+	Project     string
 	FetchIssues func() ([]*jira.Issue, int)
 	FetchEpics  func() ([]*jira.Issue, int)
 }
@@ -40,7 +40,7 @@ type IssueList struct {
 	activeTab int
 
 	// Per-tab state
-	tables           []*tuiBubble.Table
+	tables           []*Table
 	issueDetailViews []IssueModel
 
 	err error
@@ -59,7 +59,7 @@ func NewIssueList(
 	project, server string,
 	total int,
 	tabs []*TabConfig,
-	displayFormat tuiBubble.DisplayFormat,
+	displayFormat DisplayFormat,
 ) *IssueList {
 	const tableHelpText = "j/↓ k/↑: down up, CTRL+e/y scroll  •  n: new issue  •  u: copy URL  •  c: add comment  •  CTRL+r: refresh  •  CTRL+p: assign to epic  •  enter: select/Open  •  q/ESC/CTRL+c: quit"
 
@@ -71,7 +71,7 @@ func NewIssueList(
 		Total:            total,
 		tabs:             tabs,
 		activeTab:        0,
-		tables:           make([]*tuiBubble.Table, len(tabs)),
+		tables:           make([]*Table, len(tabs)),
 		issueDetailViews: make([]IssueModel, len(tabs)),
 	}
 
@@ -81,8 +81,8 @@ func NewIssueList(
 		wg.Add(1)
 		go func(index int, config *TabConfig) {
 			defer wg.Done()
-			table := tuiBubble.NewTable(
-				tuiBubble.WithTableHelpText(splitViewHelpText),
+			table := NewTable(
+				WithTableHelpText(splitViewHelpText),
 			)
 			table.SetDisplayFormat(displayFormat)
 
@@ -103,9 +103,6 @@ func NewIssueList(
 	return l
 }
 
-// statusClearMsg is sent when the status message should be cleared
-type statusClearMsg struct{}
-
 // setStatusMessage sets a temporary status message that will be cleared after 1 second
 func (l *IssueList) setStatusMessage(message string) tea.Cmd {
 	l.statusMessage = message
@@ -119,7 +116,7 @@ func (l *IssueList) setStatusMessage(message string) tea.Cmd {
 	l.statusTimer = time.NewTimer(time.Second)
 
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
-		return statusClearMsg{}
+		return StatusClearMsg{}
 	})
 }
 
@@ -134,12 +131,12 @@ func (l *IssueList) Init() tea.Cmd {
 
 func (l *IssueList) forceRedrawCmd() tea.Cmd {
 	return func() tea.Msg {
-		return selectedIssueMsg{issue: l.getCurrentTable().GetIssueSync(0)}
+		return SelectedIssueMsg{issue: l.getCurrentTable().GetIssueSync(0)}
 	}
 }
 
 // getCurrentTable returns the table for the active tab
-func (l *IssueList) getCurrentTable() *tuiBubble.Table {
+func (l *IssueList) getCurrentTable() *Table {
 	return l.tables[l.activeTab]
 }
 
@@ -151,15 +148,6 @@ func (l *IssueList) getCurrentIssueDetailView() IssueModel {
 // getCurrentTabConfig returns the tab config for the active tab
 func (l *IssueList) getCurrentTabConfig() *TabConfig {
 	return l.tabs[l.activeTab]
-}
-
-type editorFinishedMsg struct{ err error }
-type issueMovedMsg struct{ err error }
-type issueAssignedToEpic struct{ err error }
-type selectedIssueMsg struct{ issue *jira.Issue }
-type issueCachedMsg struct {
-	key   string
-	issue *jira.Issue
 }
 
 // View mode constants
@@ -192,11 +180,11 @@ func (l *IssueList) editIssue(issue *jira.Issue) tea.Cmd {
 
 	c := exec.Command("jira", args...)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return editorFinishedMsg{err}
+		return EditorFinishedMsg{err}
 	})
 }
 
-func (l *IssueList) createIssue() tea.Cmd {
+func (l *IssueList) createIssue(project string) tea.Cmd {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		editor = "vim"
@@ -215,11 +203,12 @@ func (l *IssueList) createIssue() tea.Cmd {
 	args = append(args,
 		"issue",
 		"create",
+		fmt.Sprintf("-p%s", project),
 	)
 
 	c := exec.Command("jira", args...)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return editorFinishedMsg{err}
+		return EditorFinishedMsg{err}
 	})
 }
 
@@ -248,7 +237,7 @@ func (l *IssueList) addComment(iss *jira.Issue) tea.Cmd {
 
 	c := exec.Command("jira", args...)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return editorFinishedMsg{err}
+		return EditorFinishedMsg{err}
 	})
 }
 
@@ -271,7 +260,7 @@ func (l *IssueList) moveIssue(issue *jira.Issue) tea.Cmd {
 
 	c := exec.Command("jira", args...)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return issueMovedMsg{err}
+		return IssueMovedMsg{err}
 	})
 }
 
@@ -295,7 +284,7 @@ func (l *IssueList) assignToEpic(epicKey string, issue *jira.Issue) tea.Cmd {
 
 	c := exec.Command("jira", args...)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return issueAssignedToEpic{err}
+		return IssueAssignedToEpicMsg{err}
 	})
 }
 
@@ -327,13 +316,13 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update all tables and issue detail views
 		for key := range l.tables {
-			l.tables[key], cmd = l.tables[key].Update(tuiBubble.WidgetSizeMsg{
+			l.tables[key], cmd = l.tables[key].Update(WidgetSizeMsg{
 				Height: tableHeight,
 				Width:  l.rawWidth,
 			})
 			cmds = append(cmds, cmd)
 
-			l.issueDetailViews[key], cmd = l.issueDetailViews[key].Update(tuiBubble.WidgetSizeMsg{
+			l.issueDetailViews[key], cmd = l.issueDetailViews[key].Update(WidgetSizeMsg{
 				Height: previewHeight,
 				Width:  l.rawWidth,
 			})
@@ -341,13 +330,13 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		return l, tea.Batch(cmds...)
-	case selectedIssueMsg:
+	case SelectedIssueMsg:
 		cmd := l.updateCurrentIssue(msg.issue)
 		return l, cmd
-	case editorFinishedMsg, issueMovedMsg, issueAssignedToEpic:
+	case EditorFinishedMsg, IssueMovedMsg, IssueAssignedToEpicMsg:
 		l.FetchAndRefreshCache()
 		return l, cmd
-	case statusClearMsg:
+	case StatusClearMsg:
 		l.statusMessage = ""
 		if l.statusTimer != nil {
 			l.statusTimer.Stop()
@@ -360,7 +349,7 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			epic := item
 			return l, l.assignToEpic(epic.Key, l.getCurrentTable().GetIssueSync(0))
 		}
-	case tuiBubble.CurrentIssueReceivedMsg:
+	case CurrentIssueReceivedMsg:
 		currentTable := l.getCurrentTable()
 
 		if msg.Table == currentTable && msg.Pos == currentTable.GetCursorRow() {
@@ -370,14 +359,14 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		currentTable := l.getCurrentTable()
 		if currentTable != nil {
-			if currentTable.SorterState == tuiBubble.SorterFiltering {
+			if currentTable.SorterState == SorterFiltering {
 				var cmd1, cmd2 tea.Cmd
 				l.tables[l.activeTab], cmd1 = currentTable.Update(msg)
 				cmd2 = l.tables[l.activeTab].ScheduleIssueUpdateMessage(0)
 				return l, tea.Batch(cmd1, cmd2)
 			}
 
-			if currentTable.SorterState == tuiBubble.SorterActive && msg.String() == "esc" {
+			if currentTable.SorterState == SorterActive && msg.String() == "esc" {
 				l.tables[l.activeTab], cmd = currentTable.Update(msg)
 				return l, cmd
 			}
@@ -432,7 +421,7 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmdutil.Navigate(l.Server, iss.Key)
 			return l, nil
 		case "n":
-			return l, l.createIssue()
+			return l, l.createIssue(l.getCurrentTabConfig().Project)
 		case "c":
 			return l, l.addComment(l.getCurrentTable().GetIssueSync(0))
 		case "ctrl+r":

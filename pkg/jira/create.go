@@ -26,7 +26,7 @@ type CreateRequest struct {
 	// This can also be used to attach epic for next-gen project.
 	ParentIssueKey   string
 	Summary          string
-	Body             interface{} // string in v1/v2 and adf.ADF in v3
+	Body             any // string in v1/v2 and adf.ADF in v3
 	Reporter         string
 	Assignee         string
 	Priority         string

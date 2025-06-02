@@ -4,7 +4,6 @@ import (
 	"log"
 
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
-	"github.com/ankitpokhrel/jira-cli/pkg/tuiBubble"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -37,7 +36,7 @@ func (m *FuzzySelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
-	case tuiBubble.WidgetSizeMsg:
+	case WidgetSizeMsg:
 		m.RawWidth = msg.Width
 		m.RawHeight = msg.Height
 		m.calculateViewportDimensions()

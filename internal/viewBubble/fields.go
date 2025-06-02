@@ -1,4 +1,4 @@
-package tuiBubble
+package viewBubble
 
 const (
 	FieldID           = "ID"

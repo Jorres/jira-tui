@@ -21,11 +21,11 @@ import (
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
 	"github.com/ankitpokhrel/jira-cli/internal/debug"
 	"github.com/ankitpokhrel/jira-cli/internal/query"
+	"github.com/ankitpokhrel/jira-cli/internal/viewBubble"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter/issue"
 	"github.com/ankitpokhrel/jira-cli/pkg/md"
 	"github.com/ankitpokhrel/jira-cli/pkg/surveyext"
-	"github.com/ankitpokhrel/jira-cli/pkg/tuiBubble"
 )
 
 var _ = debug.Debug
@@ -122,7 +122,7 @@ func edit(cmd *cobra.Command, args []string) {
 	if issue.Fields.Comment.Total > 0 {
 		for _, comment := range issue.Fields.Comment.Comments {
 
-			at := tuiBubble.FormatDateTime(comment.Created, jira.RFC3339, "Local")
+			at := viewBubble.FormatDateTime(comment.Created, jira.RFC3339, "Local")
 			contentWithComments += fmt.Sprintf(
 				"\n\n# DO NOT EDIT THIS LINE - Comment by %s (at %s)\n\n",
 				comment.Author.GetDisplayableName(),

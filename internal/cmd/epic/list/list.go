@@ -13,7 +13,6 @@ import (
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
 	"github.com/ankitpokhrel/jira-cli/internal/query"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
-	"github.com/ankitpokhrel/jira-cli/pkg/tuiBubble"
 
 	"github.com/ankitpokhrel/jira-cli/internal/viewBubble"
 )
@@ -127,7 +126,7 @@ func singleEpicView(cmd *cobra.Command, flags query.FlagParser, key, project, pr
 	columns, err := flags.GetString("columns")
 	cmdutil.ExitIfError(err)
 
-	displayFormat := tuiBubble.DisplayFormat{
+	displayFormat := viewBubble.DisplayFormat{
 		Plain:        plain,
 		NoHeaders:    noHeaders,
 		NoTruncate:   noTruncate,
@@ -144,6 +143,7 @@ func singleEpicView(cmd *cobra.Command, flags query.FlagParser, key, project, pr
 	tabs := []*viewBubble.TabConfig{
 		{
 			Name:        "Epics",
+			Project:     project,
 			FetchIssues: fetchAllIssuesOfEpic,
 			FetchEpics:  func() ([]*jira.Issue, int) { return []*jira.Issue{}, 0 },
 		},
@@ -189,7 +189,7 @@ func epicExplorerView(cmd *cobra.Command, flags query.FlagParser, project, proje
 		cmdutil.ExitIfError(err)
 	}
 
-	displayFormat := tuiBubble.DisplayFormat{
+	displayFormat := viewBubble.DisplayFormat{
 		Plain:        plain,
 		NoHeaders:    noHeaders,
 		NoTruncate:   noTruncate,
@@ -200,6 +200,7 @@ func epicExplorerView(cmd *cobra.Command, flags query.FlagParser, project, proje
 	tabs := []*viewBubble.TabConfig{
 		{
 			Name:        "Epics",
+			Project:     project,
 			FetchIssues: fetchAllEpics,
 			FetchEpics:  fetchAllEpics,
 		},

@@ -17,7 +17,6 @@ import (
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/ankitpokhrel/jira-cli/pkg/md"
-	"github.com/ankitpokhrel/jira-cli/pkg/tuiBubble"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -56,7 +55,7 @@ type IssueOption struct {
 type IssueModel struct {
 	Server  string
 	Data    *jira.Issue
-	Display tuiBubble.DisplayFormat
+	Display DisplayFormat
 	Options IssueOption
 
 	// Original window dimensions
@@ -514,7 +513,7 @@ func (iss IssueModel) Update(msg tea.Msg) (IssueModel, tea.Cmd) {
 		iss.Data = msg
 		// Reset scroll when new issue is loaded
 		iss.ResetResetables()
-	case tuiBubble.WidgetSizeMsg:
+	case WidgetSizeMsg:
 		iss.RawWidth = msg.Width
 		iss.RawHeight = msg.Height
 		iss.calculateViewportDimensions()

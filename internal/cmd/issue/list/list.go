@@ -14,7 +14,6 @@ import (
 	"github.com/ankitpokhrel/jira-cli/internal/view"
 	"github.com/ankitpokhrel/jira-cli/internal/viewBubble"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
-	"github.com/ankitpokhrel/jira-cli/pkg/tuiBubble"
 )
 
 var _ = log.Fatal
@@ -91,14 +90,8 @@ func List(cmd *cobra.Command, args []string) {
 }
 
 // MakeFetcherFromTabConfig creates a fetcher function from a tab configuration
-func MakeFetcherFromTabConfig(baseProject string, baseFlags query.FlagParser, tabConfig ListTabConfig, debug bool) func() ([]*jira.Issue, int) {
+func MakeFetcherFromTabConfig(project string, baseFlags query.FlagParser, tabConfig ListTabConfig, debug bool) func() ([]*jira.Issue, int) {
 	return func() ([]*jira.Issue, int) {
-		// Use the tab's project if specified, otherwise use base project
-		project := baseProject
-		if tabConfig.Project != "" {
-			project = tabConfig.Project
-		}
-
 		q, err := query.NewIssue(project, baseFlags)
 		if err != nil {
 			cmdutil.ExitIfError(err)
@@ -213,7 +206,7 @@ func loadList(cmd *cobra.Command, args []string) {
 	columns, err := cmd.Flags().GetString("columns")
 	cmdutil.ExitIfError(err)
 
-	d := tuiBubble.DisplayFormat{
+	d := viewBubble.DisplayFormat{
 		Plain:        plain,
 		NoHeaders:    noHeaders,
 		NoTruncate:   noTruncate,
@@ -256,6 +249,7 @@ func loadList(cmd *cobra.Command, args []string) {
 
 		tabs = []*viewBubble.TabConfig{
 			{
+				Project:     project,
 				Name:        "Issues",
 				FetchIssues: fetchIssuesWithArgs,
 				FetchEpics:  fetchAllEpics,
@@ -266,9 +260,15 @@ func loadList(cmd *cobra.Command, args []string) {
 		total = 0
 
 		for i, tabConfig := range tabConfigs {
-			fetchIssues := MakeFetcherFromTabConfig(project, cmd.Flags(), tabConfig, debug)
+			tabProject := project
+			if tabConfig.Project != "" {
+				tabProject = tabConfig.Project
+			}
+
+			fetchIssues := MakeFetcherFromTabConfig(tabProject, cmd.Flags(), tabConfig, debug)
 
 			tabs[i] = &viewBubble.TabConfig{
+				Project:     tabProject,
 				Name:        tabConfig.Name,
 				FetchIssues: fetchIssues,
 				FetchEpics:  fetchAllEpics,

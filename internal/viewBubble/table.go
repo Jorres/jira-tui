@@ -1,4 +1,4 @@
-package tuiBubble
+package viewBubble
 
 import (
 	"fmt"
@@ -76,19 +76,6 @@ type Table struct {
 
 	// Data provider for getting table data
 	dataProvider DataProvider
-}
-
-type WidgetSizeMsg struct {
-	Width  int
-	Height int
-}
-
-type NopMsg struct{}
-
-type CurrentIssueReceivedMsg struct {
-	Table *Table
-	Issue *jira.Issue
-	Pos   int
 }
 
 // TableOption is a functional option to wrap table properties.
@@ -180,23 +167,32 @@ func (t *Table) Init() tea.Cmd {
 	return nil
 }
 
-func (t *Table) columnWidth(data TableData) (int, int) {
+func (t *Table) columnWidth(columnName string, data TableData) int {
 	if len(data) == 0 || len(data[0]) == 0 {
-		return 10, 0 // fallback
+		return 10 // fallback
 	}
+
 	numColumns := len(data[0])
 
-	availableSpace := t.viewportWidth
+	additionalSpaceForSummary := 10
 
-	availableSpace -= 2 * numColumns // this was the most difficult part. Each column is really ' ' + width + ' ', there is an implicit padding of 2 per column
+	availableSpace := t.viewportWidth - additionalSpaceForSummary
+
+	availableSpace -= 2 * numColumns // Implicitly, bubbletea's table's columns are really ' ' + width + ' '. There is an implicit padding of 2 per column
 
 	colWidth := availableSpace / numColumns
 	if colWidth < 10 {
 		colWidth = 10 // Minimum column width
 	}
 
+	defaultWidth := colWidth
 	remainder := availableSpace - colWidth*numColumns
-	return colWidth, remainder
+
+	if columnName == FieldSummary {
+		return defaultWidth + remainder + additionalSpaceForSummary
+	}
+
+	return defaultWidth
 }
 
 func (t *Table) filterTableData(filterText string) {
@@ -330,13 +326,10 @@ func (t *Table) View() string {
 
 	columns := make([]table.Column, len(data[0]))
 	for i, col := range data[0] {
-		oneWidth, rem := t.columnWidth(data)
+		oneWidth := t.columnWidth(col, data)
 		columns[i] = table.Column{
 			Title: col,
 			Width: oneWidth,
-		}
-		if i == len(data[0])-1 {
-			columns[i].Width = oneWidth + rem
 		}
 	}
 
@@ -468,7 +461,7 @@ func validIssueColumns() []string {
 		// FieldResolution,
 		FieldCreated,
 		FieldPriority,
-		FieldUpdated,
+		// FieldUpdated,
 		// FieldLabels,
 	}
 }
