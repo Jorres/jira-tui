@@ -187,6 +187,33 @@ func (c *Client) assignIssue(key, assignee, ver string) error {
 	return nil
 }
 
+// GetAssignableToIssue fetches users assignable to issue
+func (c *Client) GetAssignableToIssue(issueKey string) ([]*User, error) {
+	path := "/user/assignable/search"
+	path = fmt.Sprintf("%s?issueKey=%s&startAt=0&maxResults=1000", path, issueKey)
+	res, err := c.Get(context.Background(), path, nil)
+
+	if err != nil {
+		return nil, err
+	}
+	if res == nil {
+		return nil, ErrEmptyResponse
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	if res.StatusCode != http.StatusOK {
+		return nil, formatUnexpectedResponse(res)
+	}
+
+	var out []*User
+
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
 // GetIssueLinkTypes fetches issue link types using GET /issueLinkType endpoint.
 func (c *Client) GetIssueLinkTypes() ([]*IssueLinkType, error) {
 	res, err := c.GetV2(context.Background(), "/issueLinkType", nil)

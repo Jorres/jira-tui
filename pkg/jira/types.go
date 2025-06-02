@@ -182,6 +182,14 @@ type Transition struct {
 	IsAvailable bool        `json:"isAvailable"`
 }
 
+// This allows for `User` type to be passed to FuzzySelector
+func (u User) FilterValue() string {
+	return fmt.Sprintf("%s %s", u.GetDisplayableName(), u.Email)
+}
+
+func (u User) Description() string { return u.Email }
+func (u User) Title() string       { return u.GetDisplayableName() }
+
 // User holds user info.
 type User struct {
 	AccountID   string `json:"accountId,omitempty"`

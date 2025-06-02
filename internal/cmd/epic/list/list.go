@@ -148,7 +148,7 @@ func singleEpicView(cmd *cobra.Command, flags query.FlagParser, key, project, pr
 			FetchEpics:  func() ([]*jira.Issue, int) { return []*jira.Issue{}, 0 },
 		},
 	}
-	v := viewBubble.NewIssueList(project, server, total, tabs, displayFormat)
+	v := viewBubble.NewIssueList(project, server, total, tabs, displayFormat, debug)
 
 	cmdutil.ExitIfError(v.RunView())
 }
@@ -205,7 +205,7 @@ func epicExplorerView(cmd *cobra.Command, flags query.FlagParser, project, proje
 			FetchEpics:  fetchAllEpics,
 		},
 	}
-	v := viewBubble.NewIssueList(project, server, total, tabs, displayFormat)
+	v := viewBubble.NewIssueList(project, server, total, tabs, displayFormat, debug)
 	cmdutil.ExitIfError(v.RunView())
 }
 

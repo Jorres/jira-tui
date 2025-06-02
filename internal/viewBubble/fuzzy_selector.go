@@ -3,7 +3,6 @@ package viewBubble
 import (
 	"log"
 
-	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -12,6 +11,13 @@ import (
 var _ = log.Fatal
 
 var docStyle = lipgloss.NewStyle().Margin(1, 2)
+
+type FuzzySelectorType int
+
+const (
+	FuzzySelectorEpic FuzzySelectorType = iota
+	FuzzySelectorUser
+)
 
 type FuzzySelector struct {
 	list      list.Model
@@ -24,6 +30,7 @@ type FuzzySelector struct {
 	marginWidth   int
 	marginHeight  int
 	contentHeight int
+	selectorType  FuzzySelectorType
 
 	PreviousModel tea.Model
 }
@@ -49,9 +56,11 @@ func (m *FuzzySelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// filtering to the underlying list model and only subsequent "enter"
 			// should return selected issue to previous view
 			if m.list.FilterState() != list.Filtering {
-				item := (m.list.Items()[m.list.Cursor()]).(*jira.Issue)
 				return m.PreviousModel, func() tea.Msg {
-					return fuzzySelectorResult{item: item}
+					return FuzzySelectorResultMsg{
+						item:         m.list.SelectedItem(),
+						selectorType: m.selectorType,
+					}
 				}
 			}
 		}
@@ -72,15 +81,22 @@ func (m *FuzzySelector) calculateViewportDimensions() {
 	m.list.SetSize(m.viewportWidth, m.viewportHeight)
 }
 
-func NewFuzzySelectorFrom(prev tea.Model, width, height int, items []list.Item) *FuzzySelector {
+func NewFuzzySelectorFrom(prev tea.Model, width, height int, items []list.Item, fuzzySelectorType FuzzySelectorType) *FuzzySelector {
 	fz := &FuzzySelector{
 		PreviousModel: prev,
 		RawWidth:      width,
 		RawHeight:     height,
-		list:          list.New(items, list.NewDefaultDelegate(), 0, 0),
+
+		list:         list.New(items, list.NewDefaultDelegate(), 0, 0),
+		selectorType: fuzzySelectorType,
 	}
 
-	fz.list.Title = "Select an epic to assign to:"
+	switch fuzzySelectorType {
+	case FuzzySelectorEpic:
+		fz.list.Title = "Select an epic to assign to:"
+	case FuzzySelectorUser:
+		fz.list.Title = "Assign this issue to:"
+	}
 	fz.calculateViewportDimensions()
 
 	return fz

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ankitpokhrel/jira-cli/api"
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
 	"github.com/ankitpokhrel/jira-cli/internal/debug"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
@@ -53,6 +54,10 @@ type IssueList struct {
 	// Status message fields
 	statusMessage string
 	statusTimer   *time.Timer
+
+	c *jira.Client
+
+	users []*jira.User
 }
 
 func NewIssueList(
@@ -60,15 +65,18 @@ func NewIssueList(
 	total int,
 	tabs []*TabConfig,
 	displayFormat DisplayFormat,
+	debug bool,
 ) *IssueList {
-	const tableHelpText = "j/↓ k/↑: down up, CTRL+e/y scroll  •  n: new issue  •  u: copy URL  •  c: add comment  •  CTRL+r: refresh  •  CTRL+p: assign to epic  •  enter: select/Open  •  q/ESC/CTRL+c: quit"
+	const tableHelpText = "j/↓ k/↑: down up, CTRL+e/y scroll  •  n: new issue  •  u: copy URL  •  c: add comment  •  CTRL+r: refresh  •  CTRL+p: assign to epic  •  enter: select/Open  •  q/ESC/CTRL+c: quit   •  a: change assignee"
 
 	splitViewHelpText := tableHelpText
 
 	l := &IssueList{
-		Project:          project,
-		Server:           server,
-		Total:            total,
+		Project: project,
+		Server:  server,
+		Total:   total,
+
+		c:                api.DefaultClient(debug),
 		tabs:             tabs,
 		activeTab:        0,
 		tables:           make([]*Table, len(tabs)),
@@ -118,10 +126,6 @@ func (l *IssueList) setStatusMessage(message string) tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
 		return StatusClearMsg{}
 	})
-}
-
-type fuzzySelectorResult struct {
-	item list.Item
 }
 
 // Init initializes the IssueList model.
@@ -288,10 +292,29 @@ func (l *IssueList) assignToEpic(epicKey string, issue *jira.Issue) tea.Cmd {
 	})
 }
 
+func (l *IssueList) assignToUser(user *jira.User, issue *jira.Issue) tea.Cmd {
+	err := l.c.AssignIssue(issue.Key, user.AccountID)
+	if err != nil {
+		cmdutil.ExitIfError(err)
+	}
+	return l.forceRedrawCmd()
+}
+
 func (l *IssueList) updateCurrentIssue(msg tea.Msg) tea.Cmd {
 	m, cmd := l.getCurrentIssueDetailView().Update(msg)
 	l.issueDetailViews[l.activeTab] = m
 	return cmd
+}
+
+func (l *IssueList) SafelyGetAssignableUsers(issueKey string) []*jira.User {
+	if l.users == nil {
+		var err error
+		l.users, err = l.c.GetAssignableToIssue(issueKey)
+		if err != nil {
+			cmdutil.ExitIfError(err)
+		}
+	}
+	return l.users
 }
 
 // Update handles user input and updates the model state.
@@ -343,11 +366,14 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			l.statusTimer = nil
 		}
 		return l, nil
-	case fuzzySelectorResult:
-		switch item := msg.item.(type) {
-		case *jira.Issue:
-			epic := item
+	case FuzzySelectorResultMsg:
+		switch msg.selectorType {
+		case FuzzySelectorEpic:
+			epic := msg.item.(*jira.Issue)
 			return l, l.assignToEpic(epic.Key, l.getCurrentTable().GetIssueSync(0))
+		case FuzzySelectorUser:
+			user := msg.item.(*jira.User)
+			return l, l.assignToUser(user, l.getCurrentTable().GetIssueSync(0))
 		}
 	case CurrentIssueReceivedMsg:
 		currentTable := l.getCurrentTable()
@@ -397,6 +423,16 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd1 = currentTable.ScheduleIssueUpdateMessage(+1)
 			l.tables[l.activeTab], cmd = currentTable.Update(msg)
 			return l, tea.Batch(cmd1, cmd2)
+		case "a":
+			iss := l.getCurrentTable().GetIssueSync(0)
+			users := l.SafelyGetAssignableUsers(iss.Key)
+
+			listItems := []list.Item{}
+			for _, user := range users {
+				listItems = append(listItems, user)
+			}
+			fz := NewFuzzySelectorFrom(l, l.rawWidth, l.rawHeight, listItems, FuzzySelectorUser)
+			return fz, nil
 		case "ctrl+p":
 			// I hate golang, why tf []concrete -> []interface is invalid when concrete satisfies interface...
 			tabConfig := l.getCurrentTabConfig()
@@ -405,7 +441,7 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for _, epic := range epics {
 				listItems = append(listItems, epic)
 			}
-			fz := NewFuzzySelectorFrom(l, l.rawWidth, l.rawHeight, listItems)
+			fz := NewFuzzySelectorFrom(l, l.rawWidth, l.rawHeight, listItems, FuzzySelectorEpic)
 			return fz, nil
 		case "m":
 			return l, l.moveIssue(l.getCurrentTable().GetIssueSync(0))

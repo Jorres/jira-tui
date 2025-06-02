@@ -276,7 +276,7 @@ func loadList(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	v := viewBubble.NewIssueList(project, server, total, tabs, d)
+	v := viewBubble.NewIssueList(project, server, total, tabs, d, debug)
 
 	cmdutil.ExitIfError(v.RunView())
 }

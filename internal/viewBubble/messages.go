@@ -1,6 +1,9 @@
 package viewBubble
 
-import "github.com/ankitpokhrel/jira-cli/pkg/jira"
+import (
+	"github.com/ankitpokhrel/jira-cli/pkg/jira"
+	"github.com/charmbracelet/bubbles/list"
+)
 
 type StatusClearMsg struct{}
 
@@ -28,4 +31,9 @@ type SelectedIssueMsg struct{ issue *jira.Issue }
 type IssueCachedMsg struct {
 	key   string
 	issue *jira.Issue
+}
+
+type FuzzySelectorResultMsg struct {
+	item         list.Item
+	selectorType FuzzySelectorType
 }
