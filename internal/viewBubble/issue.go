@@ -656,44 +656,10 @@ func (iss *IssueModel) getVisibleLines() string {
 	return strings.Join(visibleLines, "\n")
 }
 
-// generateScrollbar creates a vertical scrollbar representation
+// generateScrollbar creates a vertical scrollbar representation using the scrollbar module
 func (iss *IssueModel) generateScrollbar() (string, bool) {
-	needsScrollbar := len(iss.renderedLines) > iss.contentHeight
-
-	// Always generate a column for consistent positioning
-	var scrollbar strings.Builder
-	for i := 0; i < iss.contentHeight; i++ {
-		if needsScrollbar {
-			totalLines := len(iss.renderedLines)
-			viewportSize := iss.contentHeight
-
-			// Calculate the proportion of content that is visible
-			visibleProportion := float64(viewportSize) / float64(totalLines)
-
-			// Calculate the size of the bright section (thumb)
-			thumbSize := int(visibleProportion * float64(iss.contentHeight))
-			if thumbSize < 1 {
-				thumbSize = 1
-			}
-
-			// Calculate the position of the thumb
-			scrollProgress := float64(iss.firstVisibleLine) / float64(totalLines-viewportSize)
-			thumbPosition := int(scrollProgress * float64(iss.contentHeight-thumbSize))
-
-			if i >= thumbPosition && i < thumbPosition+thumbSize {
-				scrollbar.WriteString("█") // Bright block for visible portion
-			} else {
-				scrollbar.WriteString("▓") // Dim block for non-visible portion
-			}
-		} else {
-			scrollbar.WriteString(" ") // Empty space when no scrollbar needed
-		}
-		if i < iss.contentHeight-1 {
-			scrollbar.WriteString("\n")
-		}
-	}
-
-	return scrollbar.String(), needsScrollbar
+	config := DefaultScrollbarConfig(iss.contentHeight)
+	return GenerateScrollbar(len(iss.renderedLines), iss.contentHeight, iss.firstVisibleLine, config)
 }
 
 // View renders the IssueList.
@@ -724,23 +690,6 @@ func (iss IssueModel) View() string {
 	// Generate scrollbar
 	scrollbar, needsScrollbar := iss.generateScrollbar()
 
-	// Create scrollbar style - bright blocks match border color, dim blocks stay gray
-	var scrollbarStyle lipgloss.Style
-	if needsScrollbar {
-		scrollbarStyle = lipgloss.NewStyle().
-			Height(iss.contentHeight).
-			Align(lipgloss.Center, lipgloss.Top).
-			Foreground(lipgloss.Color("240")). // Gray for dim blocks
-			Transform(func(s string) string {
-				// Replace bright blocks with border color
-				return strings.ReplaceAll(s, "█", lipgloss.NewStyle().Foreground(lipgloss.Color("62")).Render("█"))
-			})
-	} else {
-		scrollbarStyle = lipgloss.NewStyle().
-			Height(iss.contentHeight).
-			Align(lipgloss.Center, lipgloss.Top)
-	}
-
 	// Create content box without margins (we'll apply them to the combined view)
 	contentBoxStyle := lipgloss.NewStyle().
 		Width(iss.viewportWidth).
@@ -748,11 +697,16 @@ func (iss IssueModel) View() string {
 		Align(lipgloss.Center, lipgloss.Top)
 
 	// Combine scrollbar and content horizontally
-	contentWithScrollbar := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		scrollbarStyle.Render(scrollbar),
-		contentBoxStyle.Render(out),
-	)
+	var contentWithScrollbar string
+	if needsScrollbar {
+		contentWithScrollbar = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			scrollbar,
+			contentBoxStyle.Render(out),
+		)
+	} else {
+		contentWithScrollbar = contentBoxStyle.Render(out)
+	}
 
 	// Apply margins to the combined view
 	finalStyle := lipgloss.NewStyle().
