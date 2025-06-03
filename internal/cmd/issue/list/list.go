@@ -106,9 +106,6 @@ func MakeFetcherFromTabConfig(project string, baseFlags query.FlagParser, tabCon
 		}
 
 		issues, total, err := func() ([]*jira.Issue, int, error) {
-			s := cmdutil.Info("Fetching issues...")
-			defer s.Stop()
-
 			if debug {
 				log.Fatal(fmt.Sprintf("%+v\n", q.Params()))
 			}
@@ -128,9 +125,6 @@ func MakeFetcherFromTabConfig(project string, baseFlags query.FlagParser, tabCon
 func MakeFetcherFromQuery(q *query.Issue, debug bool) func() ([]*jira.Issue, int) {
 	return func() ([]*jira.Issue, int) {
 		issues, total, err := func() ([]*jira.Issue, int, error) {
-			s := cmdutil.Info("Fetching issues...")
-			defer s.Stop()
-
 			if debug {
 				log.Fatal(fmt.Sprintf("%+v\n", q.Params()))
 			}
@@ -276,9 +270,7 @@ func loadList(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	v := viewBubble.NewIssueList(project, server, total, tabs, d, debug)
-
-	cmdutil.ExitIfError(v.RunView())
+	_ = viewBubble.RunMainUI(project, server, total, tabs, d, debug)
 }
 
 // SetFlags sets flags supported by a list command.

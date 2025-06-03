@@ -7,6 +7,7 @@ import (
 	"github.com/ankitpokhrel/jira-cli/api"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter/issue"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -76,6 +77,9 @@ type Table struct {
 
 	// Data provider for getting table data
 	dataProvider DataProvider
+
+	// Spinner for loading state
+	spinner spinner.Model
 }
 
 // TableOption is a functional option to wrap table properties.
@@ -101,12 +105,18 @@ func NewTable(opts ...TableOption) *Table {
 		Padding(0, 1).
 		Height(1)
 
+	// Initialize spinner
+	s := spinner.New()
+	s.Spinner = spinner.MiniDot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("62"))
+
 	t := &Table{
 		baseStyle:    baseStyle,
 		footerStyle:  footerStyle,
 		helpStyle:    helpStyle,
 		sorterStyle:  sorterStyle,
 		sorterHeight: sorterHeight,
+		spinner:      s,
 	}
 
 	t.table = table.New(
@@ -265,6 +275,12 @@ func (t *Table) Update(msg tea.Msg) (*Table, tea.Cmd) {
 		}
 	}
 
+	// Update spinner if we don't have data yet
+	if t.allIssues == nil {
+		t.spinner, cmd = t.spinner.Update(msg)
+		return t, cmd
+	}
+
 	t.table, cmd = t.table.Update(msg)
 	return t, cmd
 }
@@ -304,6 +320,18 @@ func (t *Table) SetDataProvider(provider DataProvider) {
 
 // View renders the table.
 func (t *Table) View() string {
+	// Show spinner if no issues loaded yet
+	if t.allIssues == nil {
+		spinnerStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("205")).
+			Align(lipgloss.Center).
+			Width(t.viewportWidth).
+			Height(t.viewportHeight)
+
+		spinnerContent := fmt.Sprintf("%s Loading issues...", t.spinner.View())
+		return t.baseStyle.Render(spinnerStyle.Render(spinnerContent))
+	}
+
 	var s strings.Builder
 	var viewComponents []string
 
@@ -534,6 +562,40 @@ func (t *Table) GetIssueSync(shift int) *jira.Issue {
 
 	t.issueCache[key] = iss
 	return iss
+}
+
+func (t *Table) GetIssueAsync(i int, shift int) tea.Cmd {
+	row := t.GetCursorRow()
+	var issuePool []*jira.Issue
+	if t.SorterState == SorterInactive {
+		issuePool = t.allIssues
+	} else {
+		issuePool = t.filteredIssues
+	}
+	pos := row + shift
+	if pos < 0 {
+		pos = 0
+	}
+	if pos >= len(issuePool) {
+		pos = len(issuePool) - 1
+	}
+
+	key := issuePool[pos].Key
+
+	return func() tea.Msg {
+
+		if iss, ok := t.issueCache[key]; ok {
+			return IncomingIssueMsg{index: i, issue: iss}
+		}
+
+		iss, err := api.ProxyGetIssue(api.DefaultClient(false), key, issue.NewNumCommentsFilter(10))
+		if err != nil {
+			panic(err)
+		}
+
+		t.issueCache[key] = iss
+		return IncomingIssueMsg{index: i, issue: iss}
+	}
 }
 
 func (t *Table) ScheduleIssueUpdateMessage(shift int) tea.Cmd {

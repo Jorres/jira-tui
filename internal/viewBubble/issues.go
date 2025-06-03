@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ankitpokhrel/jira-cli/api"
@@ -16,6 +15,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -57,10 +57,10 @@ type IssueList struct {
 
 	c *jira.Client
 
-	users []*jira.User
+	cachedAllUsers []*jira.User
 }
 
-func NewIssueList(
+func RunMainUI(
 	project, server string,
 	total int,
 	tabs []*TabConfig,
@@ -83,30 +83,29 @@ func NewIssueList(
 		issueDetailViews: make([]IssueModel, len(tabs)),
 	}
 
-	wg := sync.WaitGroup{}
+	p := tea.NewProgram(l, tea.WithAltScreen())
 
 	for i, tabConfig := range tabs {
-		wg.Add(1)
-		go func(index int, config *TabConfig) {
-			defer wg.Done()
-			table := NewTable(
-				WithTableHelpText(splitViewHelpText),
-			)
-			table.SetDisplayFormat(displayFormat)
+		table := NewTable(
+			WithTableHelpText(splitViewHelpText),
+		)
+		table.SetDisplayFormat(displayFormat)
 
-			issues, _ := config.FetchIssues()
-			table.SetIssueData(issues)
+		l.tables[i] = table
+		l.issueDetailViews[i] = NewIssueModel(l.Server)
 
-			l.tables[index] = table
-			l.issueDetailViews[index] = NewIssueModel(l.Server)
-			if len(issues) > 0 {
-				m, _ := l.issueDetailViews[index].Update(table.GetIssueSync(0))
-				l.issueDetailViews[index] = m
-			}
-		}(i, tabConfig)
+		go func() {
+			issues, _ := tabConfig.FetchIssues()
+			p.Send(IncomingIssueListMsg{issues: issues, index: i})
+		}()
 	}
 
-	wg.Wait()
+	_, err := p.Run()
+
+	if err != nil {
+		fmt.Println("Error running program:", err)
+		os.Exit(1)
+	}
 
 	return l
 }
@@ -307,14 +306,14 @@ func (l *IssueList) updateCurrentIssue(msg tea.Msg) tea.Cmd {
 }
 
 func (l *IssueList) SafelyGetAssignableUsers(issueKey string) []*jira.User {
-	if l.users == nil {
+	if l.cachedAllUsers == nil {
 		var err error
-		l.users, err = l.c.GetAssignableToIssue(issueKey)
+		l.cachedAllUsers, err = l.c.GetAssignableToIssue(issueKey)
 		if err != nil {
 			cmdutil.ExitIfError(err)
 		}
 	}
-	return l.users
+	return l.cachedAllUsers
 }
 
 // Update handles user input and updates the model state.
@@ -352,9 +351,33 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 
+		tableSpinner := l.getCurrentTable().spinner.Tick
+		issueSpinner := l.getCurrentIssueDetailView().spinner.Tick
+		cmds = append(cmds, tableSpinner, issueSpinner)
+
 		return l, tea.Batch(cmds...)
 	case SelectedIssueMsg:
 		cmd := l.updateCurrentIssue(msg.issue)
+		return l, cmd
+	case spinner.TickMsg:
+		var cmd1, cmd2 tea.Cmd
+		l.tables[l.activeTab], cmd1 = l.tables[l.activeTab].Update(msg)
+		debug.Debug("sending...")
+		l.issueDetailViews[l.activeTab], cmd2 = l.issueDetailViews[l.activeTab].Update(msg)
+		return l, tea.Batch(cmd1, cmd2)
+	case IncomingIssueMsg:
+		if l.activeTab == msg.index {
+			m, _ := l.issueDetailViews[msg.index].Update(msg.issue)
+			l.issueDetailViews[msg.index] = m
+		}
+		return l, nil
+	case IncomingIssueListMsg:
+		var cmd tea.Cmd
+		thisTable := l.tables[msg.index]
+		thisTable.SetIssueData(msg.issues)
+		if len(msg.issues) > 0 {
+			cmd = thisTable.GetIssueAsync(msg.index, 0)
+		}
 		return l, cmd
 	case EditorFinishedMsg, IssueMovedMsg, IssueAssignedToEpicMsg:
 		l.FetchAndRefreshCache()
@@ -539,15 +562,6 @@ func (l *IssueList) View() string {
 			detailView,
 		)
 	}
-}
-
-func (l *IssueList) RunView() error {
-	if _, err := tea.NewProgram(l, tea.WithAltScreen()).Run(); err != nil {
-		fmt.Println("Error running program:", err)
-		os.Exit(1)
-	}
-
-	return nil
 }
 
 // Tab styling (based on tabs.go example)

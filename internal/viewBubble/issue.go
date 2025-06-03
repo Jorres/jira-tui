@@ -2,11 +2,11 @@ package viewBubble
 
 import (
 	"fmt"
-	"log"
 	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/glamour"
 	"github.com/fatih/color"
 	"github.com/spf13/viper"
@@ -15,6 +15,7 @@ import (
 	"md-adf-exp/adf2md"
 
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
+	"github.com/ankitpokhrel/jira-cli/internal/debug"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/ankitpokhrel/jira-cli/pkg/md"
 
@@ -22,7 +23,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-var _ = log.Fatal
+var _ = debug.Debug
 
 const defaultSummaryLength = 73 // +1 to take ellipsis '…' into account.
 
@@ -84,6 +85,9 @@ type IssueModel struct {
 	uniqueLinkTitleReplacement string
 	uniqueLinkTextReplacement  string
 	nLinks                     int
+
+	// Spinner for loading state
+	spinner spinner.Model
 }
 
 // RenderedOut translates raw data to the format we want to display in.
@@ -549,6 +553,11 @@ func (iss IssueModel) Update(msg tea.Msg) (IssueModel, tea.Cmd) {
 		}
 	}
 
+	if iss.Data == nil {
+		iss.spinner, cmd = iss.spinner.Update(msg)
+		return iss, cmd
+	}
+
 	return iss, cmd
 }
 
@@ -619,12 +628,18 @@ func (iss *IssueModel) prepareRenderedLines() {
 }
 
 func NewIssueModel(server string) IssueModel {
+	// Initialize spinner
+	s := spinner.New()
+	s.Spinner = spinner.MiniDot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("62"))
+
 	iss := IssueModel{
 		Server:                            server,
 		Data:                              nil,
 		Options:                           IssueOption{NumComments: 10},
 		currentlyHighlightedLinkPos:       -1,
 		currentlyHighlightedLinkCountdown: -1,
+		spinner:                           s,
 	}
 
 	iss.calculateViewportDimensions()
@@ -664,9 +679,24 @@ func (iss *IssueModel) generateScrollbar() (string, bool) {
 
 // View renders the IssueList.
 func (iss IssueModel) View() string {
-	// Show placeholder if no issue data is available
+	// Show spinner if no issue data is available
 	if iss.Data == nil {
-		return "No issue selected yet"
+		spinnerStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("205")).
+			Align(lipgloss.Center).
+			Width(iss.viewportWidth).
+			Height(iss.viewportHeight)
+
+		spinnerContent := fmt.Sprintf("%s Loading issue...", iss.spinner.View())
+		contentBoxStyle := lipgloss.NewStyle().
+			Width(iss.viewportWidth).
+			Height(iss.viewportHeight).
+			Align(lipgloss.Center, lipgloss.Center)
+
+		finalStyle := lipgloss.NewStyle().
+			Margin(iss.marginHeight, iss.marginWidth, 0)
+
+		return finalStyle.Render(contentBoxStyle.Render(spinnerStyle.Render(spinnerContent)))
 	}
 
 	iss.prepareRenderedLines()

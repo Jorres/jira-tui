@@ -79,9 +79,6 @@ func edit(cmd *cobra.Command, args []string) {
 	}
 
 	issue, err := func() (*jira.Issue, error) {
-		s := cmdutil.Info(fmt.Sprintf("Fetching issue %s...", params.issueKey))
-		defer s.Stop()
-
 		issue, err := api.ProxyGetIssue(client, params.issueKey, issue.NewNumCommentsFilter(10))
 		if err != nil {
 			return nil, err

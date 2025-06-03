@@ -37,3 +37,13 @@ type FuzzySelectorResultMsg struct {
 	item         list.Item
 	selectorType FuzzySelectorType
 }
+
+type IncomingIssueListMsg struct {
+	issues []*jira.Issue
+	index  int
+}
+
+type IncomingIssueMsg struct {
+	issue *jira.Issue
+	index int
+}
