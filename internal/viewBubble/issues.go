@@ -67,7 +67,7 @@ func NewIssueList(
 	displayFormat DisplayFormat,
 	debug bool,
 ) *IssueList {
-	const tableHelpText = "j/↓ k/↑: down up, CTRL+e/y scroll  •  n: new issue  •  u: copy URL  •  c: add comment  •  CTRL+r: refresh  •  CTRL+p: assign to epic  •  enter: select/Open  •  q/ESC/CTRL+c: quit   •  a: change assignee"
+	const tableHelpText = "?: toggle help"
 
 	splitViewHelpText := tableHelpText
 
@@ -466,6 +466,9 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd2 tea.Cmd
 			l.tables[l.activeTab], cmd2 = currentTable.Update(msg)
 			return l, tea.Batch(cmd1, cmd2)
+		case "?":
+			helpView := NewHelpView(l, l.rawWidth, l.rawHeight)
+			return helpView, nil
 
 		// Forwarding to issue:
 		case "ctrl+e", "ctrl+y", "tab":
