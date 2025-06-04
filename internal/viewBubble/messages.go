@@ -2,7 +2,7 @@ package viewBubble
 
 import (
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
-	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/v2/list"
 )
 
 type StatusClearMsg struct{}

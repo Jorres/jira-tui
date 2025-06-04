@@ -15,10 +15,10 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/spf13/viper"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/bubbles/v2/list"
+	"github.com/charmbracelet/bubbles/v2/spinner"
+	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
 )
 
 var _ = debug.Debug
@@ -585,7 +585,7 @@ func tabBorderWithBottom(left, middle, right string) lipgloss.Border {
 var (
 	inactiveTabBorder = tabBorderWithBottom("┬", "─", "┬")
 	activeTabBorder   = tabBorderWithBottom("┘", " ", "└")
-	highlightColor    = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
+	highlightColor    = lipgloss.Color("#7D56F4")
 	grayColor         = lipgloss.Color("240")
 	inactiveTabStyle  = lipgloss.NewStyle().Border(inactiveTabBorder, true).BorderForeground(grayColor).Padding(0, 1)
 	activeTabStyle    = lipgloss.NewStyle().Border(activeTabBorder, true).BorderForeground(highlightColor).Padding(0, 1)

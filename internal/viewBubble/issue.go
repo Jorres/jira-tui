@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/v2/spinner"
 	"github.com/charmbracelet/glamour"
 	"github.com/fatih/color"
 	"github.com/spf13/viper"
@@ -19,8 +19,8 @@ import (
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/ankitpokhrel/jira-cli/pkg/md"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
 )
 
 var _ = debug.Debug
