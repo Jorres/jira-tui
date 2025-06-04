@@ -183,7 +183,7 @@ func (l *IssueList) editIssue(issue *jira.Issue) tea.Cmd {
 
 	c := exec.Command("jira", args...)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return EditorFinishedMsg{err}
+		return IssueEditedMsg{err}
 	})
 }
 
@@ -211,7 +211,7 @@ func (l *IssueList) createIssue(project string) tea.Cmd {
 
 	c := exec.Command("jira", args...)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return EditorFinishedMsg{err}
+		return IssueCreatedMsg{err}
 	})
 }
 
@@ -240,7 +240,7 @@ func (l *IssueList) addComment(iss *jira.Issue) tea.Cmd {
 
 	c := exec.Command("jira", args...)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return EditorFinishedMsg{err}
+		return IssueEditedMsg{err}
 	})
 }
 
@@ -379,7 +379,7 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = thisTable.GetIssueAsync(msg.index, 0)
 		}
 		return l, cmd
-	case EditorFinishedMsg, IssueMovedMsg, IssueAssignedToEpicMsg:
+	case IssueEditedMsg, IssueMovedMsg, IssueAssignedToEpicMsg, IssueCreatedMsg:
 		l.FetchAndRefreshCache()
 		return l, cmd
 	case StatusClearMsg:

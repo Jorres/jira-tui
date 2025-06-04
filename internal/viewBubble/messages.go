@@ -22,6 +22,8 @@ type CurrentIssueReceivedMsg struct {
 
 type EditorFinishedMsg struct{ err error }
 
+type IssueCreatedMsg struct{ err error }
+
 type IssueMovedMsg struct{ err error }
 
 type IssueAssignedToEpicMsg struct{ err error }

@@ -533,7 +533,7 @@ func (t *Table) assignColumns(columns []string, issue *jira.Issue) []string {
 	return bucket
 }
 
-func (t *Table) GetIssueSync(shift int) *jira.Issue {
+func (t *Table) getKeyUnderCursorWithShift(shift int) string {
 	row := t.GetCursorRow()
 	var issuePool []*jira.Issue
 	if t.SorterState == SorterInactive {
@@ -549,7 +549,11 @@ func (t *Table) GetIssueSync(shift int) *jira.Issue {
 		pos = len(issuePool) - 1
 	}
 
-	key := issuePool[pos].Key
+	return issuePool[pos].Key
+}
+
+func (t *Table) GetIssueSync(shift int) *jira.Issue {
+	key := t.getKeyUnderCursorWithShift(shift)
 
 	if iss, ok := t.issueCache[key]; ok {
 		return iss
@@ -565,25 +569,8 @@ func (t *Table) GetIssueSync(shift int) *jira.Issue {
 }
 
 func (t *Table) GetIssueAsync(i int, shift int) tea.Cmd {
-	row := t.GetCursorRow()
-	var issuePool []*jira.Issue
-	if t.SorterState == SorterInactive {
-		issuePool = t.allIssues
-	} else {
-		issuePool = t.filteredIssues
-	}
-	pos := row + shift
-	if pos < 0 {
-		pos = 0
-	}
-	if pos >= len(issuePool) {
-		pos = len(issuePool) - 1
-	}
-
-	key := issuePool[pos].Key
-
+	key := t.getKeyUnderCursorWithShift(shift)
 	return func() tea.Msg {
-
 		if iss, ok := t.issueCache[key]; ok {
 			return IncomingIssueMsg{index: i, issue: iss}
 		}
