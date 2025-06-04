@@ -3,7 +3,6 @@ package viewBubble
 import (
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -74,14 +73,9 @@ const (
 // MDRenderer constructs markdown renderer.
 func MDRenderer() (*glamour.TermRenderer, error) {
 	return glamour.NewTermRenderer(
-		glamour.WithEnvironmentConfig(),
+		glamour.WithStandardStyle("dark"),
 		glamour.WithWordWrap(wordWrap),
 	)
-}
-
-func unescape(s string) string {
-	pattern := regexp.MustCompile(`(\[[a-zA-Z0-9_,;: \-\."#]+\[*)\[\]`)
-	return pattern.ReplaceAllString(s, "$1]")
 }
 
 func coloredOut(msg string, clr color.Attribute, attrs ...color.Attribute) string {
@@ -119,11 +113,4 @@ func pad(msg string, limit int) string {
 		out.WriteRune(' ')
 	}
 	return out.String()
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
