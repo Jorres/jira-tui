@@ -20,13 +20,25 @@ type CurrentIssueReceivedMsg struct {
 	Pos   int
 }
 
-type EditorFinishedMsg struct{ err error }
+type IssueEditedMsg struct {
+	err    error
+	stderr string
+}
 
-type IssueCreatedMsg struct{ err error }
+type IssueCreatedMsg struct {
+	err    error
+	stderr string
+}
 
-type IssueMovedMsg struct{ err error }
+type IssueMovedMsg struct {
+	err    error
+	stderr string
+}
 
-type IssueAssignedToEpicMsg struct{ err error }
+type IssueAssignedToEpicMsg struct {
+	err    error
+	stderr string
+}
 
 type SelectedIssueMsg struct{ issue *jira.Issue }
 

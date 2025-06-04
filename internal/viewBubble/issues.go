@@ -1,6 +1,7 @@
 package viewBubble
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -159,12 +160,18 @@ const (
 	issueDetailMode
 )
 
-func (l *IssueList) editIssue(issue *jira.Issue) tea.Cmd {
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vim"
-	}
+// execCommandWithStderr executes a command and captures both stdout and stderr
+func execCommandWithStderr(args []string, msgConstructor func(error, string) tea.Msg) tea.Cmd {
+	c := exec.Command("jira", args...)
+	var stderr bytes.Buffer
+	c.Stderr = &stderr
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		stderrOutput := stderr.String()
+		return msgConstructor(err, stderrOutput)
+	})
+}
 
+func (l *IssueList) editIssue(issue *jira.Issue) tea.Cmd {
 	args := []string{}
 
 	config := viper.GetString("config")
@@ -181,18 +188,12 @@ func (l *IssueList) editIssue(issue *jira.Issue) tea.Cmd {
 		issue.Key,
 	)
 
-	c := exec.Command("jira", args...)
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return IssueEditedMsg{err}
+	return execCommandWithStderr(args, func(err error, stderr string) tea.Msg {
+		return IssueEditedMsg{err: err, stderr: stderr}
 	})
 }
 
 func (l *IssueList) createIssue(project string) tea.Cmd {
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vim"
-	}
-
 	args := []string{}
 
 	config := viper.GetString("config")
@@ -209,18 +210,12 @@ func (l *IssueList) createIssue(project string) tea.Cmd {
 		fmt.Sprintf("-p%s", project),
 	)
 
-	c := exec.Command("jira", args...)
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return IssueCreatedMsg{err}
+	return execCommandWithStderr(args, func(err error, stderr string) tea.Msg {
+		return IssueCreatedMsg{err: err, stderr: stderr}
 	})
 }
 
 func (l *IssueList) addComment(iss *jira.Issue) tea.Cmd {
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vim"
-	}
-
 	args := []string{}
 
 	config := viper.GetString("config")
@@ -238,9 +233,8 @@ func (l *IssueList) addComment(iss *jira.Issue) tea.Cmd {
 		iss.Key,
 	)
 
-	c := exec.Command("jira", args...)
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return IssueEditedMsg{err}
+	return execCommandWithStderr(args, func(err error, stderr string) tea.Msg {
+		return IssueEditedMsg{err: err, stderr: stderr}
 	})
 }
 
@@ -261,10 +255,21 @@ func (l *IssueList) moveIssue(issue *jira.Issue) tea.Cmd {
 		issue.Key,
 	)
 
-	c := exec.Command("jira", args...)
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return IssueMovedMsg{err}
+	return execCommandWithStderr(args, func(err error, stderr string) tea.Msg {
+		return IssueMovedMsg{err: err, stderr: stderr}
 	})
+}
+
+func (l *IssueList) processError(err error, stderr string) tea.Model {
+	// we don't want to draw the error message border if user just pressed ctrl+c,
+	// this is not an "error" that user expects
+	if err != nil && !strings.Contains(stderr, "interrupt") {
+		errorModel := NewErrorModel(l, err.Error(), stderr, l.rawWidth, l.rawHeight)
+		return errorModel
+	} else {
+		l.FetchAndRefreshCache()
+		return l
+	}
 }
 
 func (l *IssueList) assignToEpic(epicKey string, issue *jira.Issue) tea.Cmd {
@@ -285,9 +290,8 @@ func (l *IssueList) assignToEpic(epicKey string, issue *jira.Issue) tea.Cmd {
 		issue.Key,
 	)
 
-	c := exec.Command("jira", args...)
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return IssueAssignedToEpicMsg{err}
+	return execCommandWithStderr(args, func(err error, stderr string) tea.Msg {
+		return IssueAssignedToEpicMsg{err: err, stderr: stderr}
 	})
 }
 
@@ -362,7 +366,6 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var cmd1, cmd2 tea.Cmd
 		l.tables[l.activeTab], cmd1 = l.tables[l.activeTab].Update(msg)
-		debug.Debug("sending...")
 		l.issueDetailViews[l.activeTab], cmd2 = l.issueDetailViews[l.activeTab].Update(msg)
 		return l, tea.Batch(cmd1, cmd2)
 	case IncomingIssueMsg:
@@ -379,9 +382,15 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = thisTable.GetIssueAsync(msg.index, 0)
 		}
 		return l, cmd
-	case IssueEditedMsg, IssueMovedMsg, IssueAssignedToEpicMsg, IssueCreatedMsg:
-		l.FetchAndRefreshCache()
-		return l, cmd
+	// Can't combine the next 4 into one switch clause due to Go's type system
+	case IssueEditedMsg:
+		return l.processError(msg.err, msg.stderr), cmd
+	case IssueMovedMsg:
+		return l.processError(msg.err, msg.stderr), cmd
+	case IssueAssignedToEpicMsg:
+		return l.processError(msg.err, msg.stderr), cmd
+	case IssueCreatedMsg:
+		return l.processError(msg.err, msg.stderr), cmd
 	case StatusClearMsg:
 		l.statusMessage = ""
 		if l.statusTimer != nil {
