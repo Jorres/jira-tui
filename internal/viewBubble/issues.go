@@ -480,8 +480,8 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "e":
 			return l, l.editIssue(l.getCurrentTable().GetIssueSync(0))
 		case "u":
-			iss := l.getCurrentTable().GetIssueSync(0)
-			url := fmt.Sprintf("%s/browse/%s", l.Server, iss.Key)
+			key := l.getCurrentTable().getKeyUnderCursorWithShift(0)
+			url := fmt.Sprintf("%s/browse/%s", l.Server, key)
 			copyToClipboard(url)
 			return l, l.setStatusMessage(fmt.Sprintf("Current issue FQDN copied: %s", url))
 		case "enter":

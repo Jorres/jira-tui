@@ -10,8 +10,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-
-	"github.com/ankitpokhrel/jira-cli/internal/debug"
 )
 
 const separatorMinus = "-"
@@ -549,7 +547,6 @@ func splitAddAndRemove(input []string) ([]string, []string) {
 func (c *Client) GetEditMetadata(key string) (*EditMetadata, error) {
 	res, err := c.Get(context.Background(), "/issue/"+key+"/editmeta", nil)
 	if err != nil {
-		debug.Fatal("error getting metadata of issue ", key, err)
 		return nil, err
 	}
 	if res == nil {

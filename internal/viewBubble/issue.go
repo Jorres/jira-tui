@@ -617,11 +617,11 @@ func (iss *IssueModel) scrollUp() {
 func (iss *IssueModel) prepareRenderedLines() {
 	r, err := MDRenderer()
 	if err != nil {
-		panic(err)
+		cmdutil.ExitIfError(fmt.Errorf("Failed to create an MDRenderer: %w", err))
 	}
 	out, err := iss.RenderedOut(r)
 	if err != nil {
-		panic(err)
+		cmdutil.ExitIfError(fmt.Errorf("Failed to render an issue using MDRenderer: %w", err))
 	}
 
 	iss.renderedLines = strings.Split(out, "\n")

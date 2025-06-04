@@ -2,7 +2,6 @@ package edit
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -225,7 +224,7 @@ func edit(cmd *cobra.Command, args []string) {
 		if isADF && body != "" {
 			adfBody, convErr := convertMarkdownToADF(body, client, project, reverseTranslator)
 			if convErr != nil {
-				panic("convertion to ADF should always succeed. If it fails, something isn't supported in converter yet")
+				cmdutil.ExitIfError(fmt.Errorf("Failed to convert markdown to adf, this may be a translator bug; %w"))
 			} else {
 				body = adfBody
 				bodyIsRawADF = true
@@ -243,7 +242,7 @@ func edit(cmd *cobra.Command, args []string) {
 			if isADF && commentBody != "" {
 				adfBody, convErr := convertMarkdownToADF(commentBody, client, project, reverseTranslator)
 				if convErr != nil {
-					panic("conversion to ADF should always succeed. If it fails, something isn't supported in converter yet")
+					cmdutil.ExitIfError(fmt.Errorf("Failed to convert markdown to adf, this may be a translator bug; %w"))
 				} else {
 					commentBody = adfBody
 					commentBodyIsRawADF = true
@@ -323,7 +322,7 @@ func getAnswers(client *jira.Client, params *editParams, issue *jira.Issue) {
 			ans := struct{ Metadata []string }{}
 			editMetadata, err := client.GetEditMetadata(params.issueKey)
 			if err != nil {
-				panic("failed to get edit metadata")
+				cmdutil.ExitIfError(fmt.Errorf("Failed to get issue edit metadata: %w"))
 			}
 
 			// Convert EditMetadata to []*Field format for compatibility
@@ -769,7 +768,7 @@ func convertMarkdownToADF(body string, client *jira.Client, project string, reve
 	)
 	adfDoc, err := translator.TranslateToADF([]byte(body))
 	if err != nil {
-		return "", fmt.Errorf("failed to convert markdown to ADF: %w", err)
+		return "", err
 	}
 
 	// Convert ADF document to JSON string
@@ -789,7 +788,6 @@ func resolveUserIDToEmail(userID string, client *jira.Client, project string) st
 	})
 
 	if err != nil {
-		log.Printf("DEBUG: Failed to search for user %s: %v", userID, err)
 		return ""
 	}
 
@@ -802,7 +800,6 @@ func resolveUserIDToEmail(userID string, client *jira.Client, project string) st
 		return user.Name
 	}
 
-	log.Printf("DEBUG: No email found for user ID %s", userID)
 	return ""
 }
 
