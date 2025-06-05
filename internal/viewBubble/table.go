@@ -25,12 +25,8 @@ const (
 
 // DisplayFormat is a issue display type.
 type DisplayFormat struct {
-	Plain        bool
-	NoHeaders    bool
-	NoTruncate   bool
-	FixedColumns uint
-	Columns      []string
-	Timezone     string
+	Columns  []string
+	Timezone string
 }
 
 // TableData is the data to be displayed in a table.
@@ -407,9 +403,7 @@ func (t *Table) makeTableData(issues []*jira.Issue) TableData {
 	var data TableData
 
 	headers := t.header()
-	if !(t.displayFormat.Plain && t.displayFormat.NoHeaders) {
-		data = append(data, headers)
-	}
+	data = append(data, headers)
 	for _, iss := range issues {
 		data = append(data, t.assignColumns(headers, iss))
 	}

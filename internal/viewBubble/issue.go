@@ -177,10 +177,6 @@ func (i *IssueModel) separator(msg string) string {
 		return m
 	}
 
-	if i.Display.Plain {
-		sep := "------------------------"
-		return fmt.Sprintf("%s%s%s", sep, pad(msg), sep)
-	}
 	sep := "————————————————————————"
 	if msg == "" {
 		return gray(fmt.Sprintf("%s%s", sep, sep))
@@ -490,13 +486,7 @@ func (i *IssueModel) footer() string {
 
 	nc := int(i.Options.NumComments)
 	if i.Data.Fields.Comment.Total > 0 && nc > 0 && nc < i.Data.Fields.Comment.Total {
-		if i.Display.Plain {
-			out.WriteString("\n")
-		}
 		out.WriteString(fmt.Sprintf("%s\n", gray("Use --comments <limit> with `jira issue view` to load more comments")))
-	}
-	if i.Display.Plain {
-		out.WriteString("\n")
 	}
 	out.WriteString(gray(fmt.Sprintf("View this issue on Jira: %s", cmdutil.GenerateServerBrowseURL(i.Server, i.Data.Key))))
 

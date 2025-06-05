@@ -20,6 +20,17 @@ type Issue struct {
 const defaultLimit = 100
 
 // NewIssue creates and initializes a new Issue type.
+func NewDefaultIssue(project string, flags FlagParser) *Issue {
+	ip := IssueParams{}
+	ip.initEmpty()
+	return &Issue{
+		Project: project,
+		Flags:   flags,
+		params:  &ip,
+	}
+}
+
+// NewIssue creates and initializes a new Issue type.
 func NewIssue(project string, flags FlagParser) (*Issue, error) {
 	ip := IssueParams{}
 	if err := ip.init(flags); err != nil {
@@ -191,6 +202,35 @@ type IssueParams struct {
 	JQL           string
 
 	debug bool
+}
+
+func (ip *IssueParams) initEmpty() {
+	boolParams := []string{"history", "watching", "reverse", "debug"}
+	stringParams := []string{
+		"resolution", "type", "parent", "priority", "reporter", "assignee", "component",
+		"created", "created-after", "created-before", "updated", "updated-after", "updated-before",
+		"jql", "order-by", "paginate",
+	}
+
+	boolParamsMap := make(map[string]bool)
+	for _, param := range boolParams {
+		boolParamsMap[param] = false
+	}
+	stringParamsMap := make(map[string]string)
+	for _, param := range stringParams {
+		stringParamsMap[param] = ""
+	}
+
+	stringParamsMap["order-by"] = "created"
+
+	labels := []string{}
+	status := []string{}
+	ip.setBoolParams(boolParamsMap)
+	ip.setStringParams(stringParamsMap)
+	ip.Labels = labels
+	ip.Status = status
+	ip.From = 0
+	ip.Limit = defaultLimit
 }
 
 func (ip *IssueParams) init(flags FlagParser) error {

@@ -1,8 +1,8 @@
 package list
 
 import (
+	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -12,19 +12,8 @@ import (
 	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
 	"github.com/ankitpokhrel/jira-cli/internal/query"
 	"github.com/ankitpokhrel/jira-cli/internal/view"
-	"github.com/ankitpokhrel/jira-cli/internal/viewBubble"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 )
-
-var _ = log.Fatal
-
-// ListTabConfig represents configuration for a single tab in issue list
-type ListTabConfig struct {
-	Name     string   `mapstructure:"name"`
-	Project  string   `mapstructure:"project"`
-	Assignee string   `mapstructure:"assignee"`
-	Status   []string `mapstructure:"status"`
-}
 
 const (
 	helpText = `List lists issues in a given project.
@@ -61,6 +50,9 @@ $ jira issue list --plain --columns key,assignee,status
 # List issues in a plain table view and show all fields
 $ jira issue list --plain --no-truncate
 
+# List issues as raw JSON data
+$ jira issue list --raw
+
 # List issues of type "Epic" in status "Done"
 $ jira issue list -tEpic -sDone
 
@@ -89,71 +81,6 @@ func List(cmd *cobra.Command, args []string) {
 	loadList(cmd, args)
 }
 
-// MakeFetcherFromTabConfig creates a fetcher function from a tab configuration
-func MakeFetcherFromTabConfig(project string, baseFlags query.FlagParser, tabConfig ListTabConfig, debug bool) func() ([]*jira.Issue, int) {
-	return func() ([]*jira.Issue, int) {
-		q, err := query.NewIssue(project, baseFlags)
-		if err != nil {
-			cmdutil.ExitIfError(err)
-		}
-
-		// Override query parameters based on tab config
-		if tabConfig.Assignee != "" {
-			q.Params().Assignee = tabConfig.Assignee
-		}
-		if len(tabConfig.Status) > 0 {
-			q.Params().Status = tabConfig.Status
-		}
-
-		issues, total, err := func() ([]*jira.Issue, int, error) {
-			if debug {
-				log.Fatal(fmt.Sprintf("%+v\n", q.Params()))
-			}
-			resp, err := api.ProxySearch(api.DefaultClient(debug), q.Get(), q.Params().From, q.Params().Limit)
-			if err != nil {
-				return nil, 0, err
-			}
-
-			return resp.Issues, resp.Total, nil
-		}()
-
-		cmdutil.ExitIfError(err)
-		return issues, total
-	}
-}
-
-func MakeFetcherFromQuery(q *query.Issue, debug bool) func() ([]*jira.Issue, int) {
-	return func() ([]*jira.Issue, int) {
-		issues, total, err := func() ([]*jira.Issue, int, error) {
-			if debug {
-				log.Fatal(fmt.Sprintf("%+v\n", q.Params()))
-			}
-			resp, err := api.ProxySearch(api.DefaultClient(debug), q.Get(), q.Params().From, q.Params().Limit)
-			if err != nil {
-				return nil, 0, err
-			}
-
-			// TODO @jorres we lost an ability to query epics here, see `epic list` command, it would fail in case of non-next-gen project
-
-			// 	var resp *jira.SearchResult
-			// 	if projectType == jira.ProjectTypeNextGen {
-			// 		q.Params().Parent = key
-			// 		q.Params().IssueType = viper.GetString("next_gen.epic_task_name")
-
-			// 		resp, err = client.Search(q.Get(), q.Params().From, q.Params().Limit)
-			// 	} else {
-			// 		resp, err = client.EpicIssues(key, q.Get(), q.Params().From, q.Params().Limit)
-			// 	}
-
-			return resp.Issues, resp.Total, nil
-		}()
-
-		cmdutil.ExitIfError(err)
-
-		return issues, total
-	}
-}
-
 func loadList(cmd *cobra.Command, args []string) {
 	server := viper.GetString("server")
 	project := viper.GetString("project.key")
@@ -178,11 +105,36 @@ func loadList(cmd *cobra.Command, args []string) {
 		cmdutil.ExitIfError(cmd.Flags().Set("jql", searchQuery))
 	}
 
-	// Read tab configuration from viper
-	var tabConfigs []ListTabConfig
-	err = viper.UnmarshalKey("bubble.list.tabs", &tabConfigs)
-	if err != nil {
-		cmdutil.ExitIfError(err)
+	issues, total, err := func() ([]*jira.Issue, int, error) {
+		s := cmdutil.Info("Fetching issues...")
+		defer s.Stop()
+
+		q, err := query.NewIssue(project, cmd.Flags())
+		if err != nil {
+			return nil, 0, err
+		}
+
+		resp, err := api.ProxySearch(api.DefaultClient(debug), q.Get(), q.Params().From, q.Params().Limit)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		return resp.Issues, resp.Total, nil
+	}()
+	cmdutil.ExitIfError(err)
+
+	if total == 0 {
+		fmt.Println()
+		cmdutil.Failed("No result found for given query in project %q", project)
+		return
+	}
+
+	raw, err := cmd.Flags().GetBool("raw")
+	cmdutil.ExitIfError(err)
+
+	if raw {
+		outputRawJSON(issues)
+		return
 	}
 
 	plain, err := cmd.Flags().GetBool("plain")
@@ -200,77 +152,40 @@ func loadList(cmd *cobra.Command, args []string) {
 	columns, err := cmd.Flags().GetString("columns")
 	cmdutil.ExitIfError(err)
 
-	d := viewBubble.DisplayFormat{
-		Plain:        plain,
-		NoHeaders:    noHeaders,
-		NoTruncate:   noTruncate,
-		FixedColumns: fixedColumns,
-		Columns: func() []string {
-			if columns != "" {
-				return strings.Split(columns, ",")
-			}
-			return []string{}
-		}(),
-		Timezone: viper.GetString("timezone"),
+	v := view.IssueList{
+		Project: project,
+		Server:  server,
+		Total:   total,
+		Data:    issues,
+		Refresh: func() {
+			loadList(cmd, args)
+		},
+		Display: view.DisplayFormat{
+			Plain:        plain,
+			NoHeaders:    noHeaders,
+			NoTruncate:   noTruncate,
+			FixedColumns: fixedColumns,
+			Columns: func() []string {
+				if columns != "" {
+					return strings.Split(columns, ",")
+				}
+				return []string{}
+			}(),
+			TableStyle: cmdutil.GetTUIStyleConfig(),
+			Timezone:   viper.GetString("timezone"),
+		},
 	}
 
-	projectType := viper.GetString("project.type")
-	epicQ, err := query.NewIssue(project, cmd.Flags())
-	if projectType == jira.ProjectTypeNextGen {
-		epicQ.Params().IssueType = viper.GetString("next_gen.epic_task_name")
+	cmdutil.ExitIfError(v.Render())
+}
+
+func outputRawJSON(issues []*jira.Issue) {
+	data, err := json.MarshalIndent(issues, "", "  ")
+	if err != nil {
+		cmdutil.Failed("Failed to marshal issues to JSON: %s", err)
+		return
 	}
-	epicQ.Params().Status = []string{}
-	epicQ.Params().Assignee = ""
-	fetchAllEpics := MakeFetcherFromQuery(epicQ, debug)
-
-	var tabs []*viewBubble.TabConfig
-	var total int
-
-	if len(tabConfigs) <= 1 {
-		q, err := query.NewIssue(project, cmd.Flags())
-		if err != nil {
-			cmdutil.ExitIfError(err)
-		}
-		fetchIssuesWithArgs := MakeFetcherFromQuery(q, debug)
-
-		_, total = fetchIssuesWithArgs()
-
-		if total == 0 {
-			fmt.Println()
-			cmdutil.Failed("No result found for given query in project %q", project)
-			return
-		}
-
-		tabs = []*viewBubble.TabConfig{
-			{
-				Project:     project,
-				Name:        "Issues",
-				FetchIssues: fetchIssuesWithArgs,
-				FetchEpics:  fetchAllEpics,
-			},
-		}
-	} else {
-		tabs = make([]*viewBubble.TabConfig, len(tabConfigs))
-		total = 0
-
-		for i, tabConfig := range tabConfigs {
-			tabProject := project
-			if tabConfig.Project != "" {
-				tabProject = tabConfig.Project
-			}
-
-			fetchIssues := MakeFetcherFromTabConfig(tabProject, cmd.Flags(), tabConfig, debug)
-
-			tabs[i] = &viewBubble.TabConfig{
-				Project:     tabProject,
-				Name:        tabConfig.Name,
-				FetchIssues: fetchIssues,
-				FetchEpics:  fetchAllEpics,
-			}
-		}
-	}
-
-	_ = viewBubble.RunMainUI(project, server, total, tabs, d, debug)
+	fmt.Println(string(data))
 }
 
 // SetFlags sets flags supported by a list command.
@@ -307,6 +222,7 @@ func SetFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("plain", false, "Display output in plain mode")
 	cmd.Flags().Bool("no-headers", false, "Don't display table headers in plain mode. Works only with --plain")
 	cmd.Flags().Bool("no-truncate", false, "Show all available columns in plain mode. Works only with --plain")
+	cmd.Flags().Bool("raw", false, "Print raw JSON output")
 
 	if cmd.HasParent() && cmd.Parent().Name() != "sprint" {
 		cmd.Flags().String("columns", "", "Comma separated list of columns to display in the plain mode.\n"+
