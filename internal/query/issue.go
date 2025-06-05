@@ -56,6 +56,10 @@ func splitPositiveNegative(labels []string) ([]string, []string) {
 	return positive, negative
 }
 
+func (i *Issue) SetParams(newParams *IssueParams) {
+	i.params = newParams
+}
+
 // Get returns constructed jql query.
 func (i *Issue) Get() string {
 	var q *jql.JQL

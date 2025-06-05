@@ -117,24 +117,29 @@ func ui(cmd *cobra.Command, args []string) {
 }
 
 type ListTabConfig struct {
-	Name     string   `mapstructure:"name"`
-	Project  string   `mapstructure:"project"`
-	Assignee string   `mapstructure:"assignee"`
-	Status   []string `mapstructure:"status"`
+	Name              string `mapstructure:"name"`
+	Project           string `mapstructure:"project"`
+	query.IssueParams `mapstructure:",squash"`
 }
 
 // MakeFetcherFromTabConfig creates a fetcher function from a tab configuration
 func MakeFetcherFromTabConfig(project string, baseFlags query.FlagParser, tabConfig ListTabConfig, debug bool) func() ([]*jira.Issue, int) {
 	return func() ([]*jira.Issue, int) {
-		q := query.NewDefaultIssue(project, baseFlags)
+		// Replace the entire params with our config, but preserve defaults
+		params := tabConfig.IssueParams
+		if params.OrderBy == "" {
+			params.OrderBy = "created"
+		}
+		if params.Limit == 0 {
+			params.Limit = 100
+		}
 
-		// Override query parameters based on tab config
-		if tabConfig.Assignee != "" {
-			q.Params().Assignee = tabConfig.Assignee
+		q := &query.Issue{
+			Project: project,
+			Flags:   baseFlags,
 		}
-		if len(tabConfig.Status) > 0 {
-			q.Params().Status = tabConfig.Status
-		}
+
+		q.SetParams(&params)
 
 		issues, total, err := func() ([]*jira.Issue, int, error) {
 			resp, err := api.ProxySearch(api.DefaultClient(debug), q.Get(), q.Params().From, q.Params().Limit)
