@@ -13,6 +13,7 @@ import (
 	"github.com/ankitpokhrel/jira-cli/internal/debug"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/atotto/clipboard"
+	"github.com/lucasb-eyer/go-colorful"
 	"github.com/spf13/viper"
 
 	"github.com/charmbracelet/bubbles/v2/list"
@@ -130,7 +131,7 @@ func (l *IssueList) setStatusMessage(message string) tea.Cmd {
 
 // Init initializes the IssueList model.
 func (l *IssueList) Init() tea.Cmd {
-	return nil
+	return tea.RequestBackgroundColor
 }
 
 func (l *IssueList) forceRedrawCmd() tea.Cmd {
@@ -320,17 +321,46 @@ func (l *IssueList) SafelyGetAssignableUsers(issueKey string) []*jira.User {
 	return l.cachedAllUsers
 }
 
+func (l *IssueList) bulkSendMsgToAllTablesAndIssues(tableMsg, issueMsg tea.Msg) []tea.Cmd {
+	var cmds []tea.Cmd
+	var cmd tea.Cmd
+	for key := range l.tables {
+		l.tables[key], cmd = l.tables[key].Update(tableMsg)
+		cmds = append(cmds, cmd)
+
+		l.issueDetailViews[key], cmd = l.issueDetailViews[key].Update(issueMsg)
+		cmds = append(cmds, cmd)
+	}
+
+	return cmds
+}
+
 // Update handles user input and updates the model state.
 func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		color, _ := colorful.Hex(msg.String())
+		_, _, lum := color.Hsl()
+
+		var style string
+		if lum < 0.5 {
+			style = "dark"
+		} else {
+			style = "light"
+		}
+
+		cmds := l.bulkSendMsgToAllTablesAndIssues(
+			SetRenderStyleMsg{style: style},
+			SetRenderStyleMsg{style: style},
+		)
+
+		return l, tea.Batch(cmds...)
 	case tea.WindowSizeMsg:
 		// Store the full window size
 		l.rawWidth = msg.Width
 		l.rawHeight = msg.Height
-
-		var cmds []tea.Cmd
 
 		// Reserve 2 rows for tabs only if there are multiple tabs
 		tabHeight := 0
@@ -340,20 +370,16 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		tableHeight := int(0.4 * float32(l.rawHeight-tabHeight))
 		previewHeight := l.rawHeight - tableHeight - tabHeight
 
-		// Update all tables and issue detail views
-		for key := range l.tables {
-			l.tables[key], cmd = l.tables[key].Update(WidgetSizeMsg{
+		cmds := l.bulkSendMsgToAllTablesAndIssues(
+			WidgetSizeMsg{
 				Height: tableHeight,
 				Width:  l.rawWidth,
-			})
-			cmds = append(cmds, cmd)
-
-			l.issueDetailViews[key], cmd = l.issueDetailViews[key].Update(WidgetSizeMsg{
+			},
+			WidgetSizeMsg{
 				Height: previewHeight,
 				Width:  l.rawWidth,
-			})
-			cmds = append(cmds, cmd)
-		}
+			},
+		)
 
 		tableSpinner := l.getCurrentTable().spinner.Tick
 		issueSpinner := l.getCurrentIssueDetailView().spinner.Tick
@@ -369,10 +395,8 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		l.issueDetailViews[l.activeTab], cmd2 = l.issueDetailViews[l.activeTab].Update(msg)
 		return l, tea.Batch(cmd1, cmd2)
 	case IncomingIssueMsg:
-		if l.activeTab == msg.index {
-			m, _ := l.issueDetailViews[msg.index].Update(msg.issue)
-			l.issueDetailViews[msg.index] = m
-		}
+		m, _ := l.issueDetailViews[msg.index].Update(msg.issue)
+		l.issueDetailViews[msg.index] = m
 		return l, nil
 	case IncomingIssueListMsg:
 		var cmd tea.Cmd
@@ -436,12 +460,16 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "right", "l":
 			if len(l.tabs) > 1 {
 				l.activeTab = (l.activeTab + 1) % len(l.tabs)
-				return l, l.forceRedrawCmd()
+				tableSpinner := l.getCurrentTable().spinner.Tick
+				issueSpinner := l.getCurrentIssueDetailView().spinner.Tick
+				return l, tea.Batch(tableSpinner, issueSpinner)
 			}
 		case "left", "h":
 			if len(l.tabs) > 1 {
 				l.activeTab = (l.activeTab - 1 + len(l.tabs)) % len(l.tabs)
-				return l, l.forceRedrawCmd()
+				tableSpinner := l.getCurrentTable().spinner.Tick
+				issueSpinner := l.getCurrentIssueDetailView().spinner.Tick
+				return l, tea.Batch(tableSpinner, issueSpinner)
 			}
 		case "up", "k":
 			currentTable := l.getCurrentTable()
@@ -548,7 +576,7 @@ func (l *IssueList) View() string {
 
 	// Add a visual separator between views
 	separator := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
+		Foreground(lipgloss.Color(getPaleColor())).
 		Render(strings.Repeat("─", l.rawWidth))
 
 	// Only render tabs if there's more than one
@@ -585,11 +613,14 @@ func tabBorderWithBottom(left, middle, right string) lipgloss.Border {
 var (
 	inactiveTabBorder = tabBorderWithBottom("┬", "─", "┬")
 	activeTabBorder   = tabBorderWithBottom("┘", " ", "└")
-	highlightColor    = lipgloss.Color("#7D56F4")
-	grayColor         = lipgloss.Color("240")
+	grayColor         = lipgloss.Color(getPaleColor())
 	inactiveTabStyle  = lipgloss.NewStyle().Border(inactiveTabBorder, true).BorderForeground(grayColor).Padding(0, 1)
-	activeTabStyle    = lipgloss.NewStyle().Border(activeTabBorder, true).BorderForeground(highlightColor).Padding(0, 1)
 )
+
+// getActiveTabStyle returns the active tab style with the current accent color
+func getActiveTabStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Border(activeTabBorder, true).BorderForeground(lipgloss.Color(getHighlightColor())).Padding(0, 1)
+}
 
 // renderTabs renders the tab bar
 func (l *IssueList) renderTabs() string {
@@ -603,7 +634,7 @@ func (l *IssueList) renderTabs() string {
 		var style lipgloss.Style
 		isActive := i == l.activeTab
 		if isActive {
-			style = activeTabStyle
+			style = getActiveTabStyle()
 		} else {
 			style = inactiveTabStyle
 		}

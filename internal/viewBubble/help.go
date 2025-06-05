@@ -247,7 +247,7 @@ func (h *HelpView) View() string {
 
 	helpStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
+		BorderForeground(lipgloss.Color(getAccentColor())).
 		Padding(2, 3).
 		Width(h.viewportWidth).
 		Height(h.viewportHeight)

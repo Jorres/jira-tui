@@ -71,9 +71,9 @@ const (
 )
 
 // MDRenderer constructs markdown renderer.
-func MDRenderer() (*glamour.TermRenderer, error) {
+func MDRenderer(lightOrDark string) (*glamour.TermRenderer, error) {
 	return glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStandardStyle(lightOrDark),
 		glamour.WithWordWrap(wordWrap),
 	)
 }

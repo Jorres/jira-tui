@@ -81,8 +81,8 @@ func GenerateScrollbar(totalLines, viewportHeight, firstVisibleLine int, config 
 func DefaultScrollbarConfig(height int) ScrollbarConfig {
 	return ScrollbarConfig{
 		Height:            height,
-		ThumbColor:        "62",  // Gray for thumb
-		TrackColor:        "240", // Gray for track
+		ThumbColor:        getAccentColor(),
+		TrackColor:        getPaleColor(),
 		ShowWhenNotNeeded: true,
 	}
 }

@@ -36,17 +36,9 @@ type DisplayFormat struct {
 // TableData is the data to be displayed in a table.
 type TableData [][]string
 
-// TableStyle sets the style of the table.
-type TableStyle struct {
-	SelectionBackground string
-	SelectionForeground string
-	SelectionTextIsBold bool
-}
-
 // Table is a bubble tea model for rendering tables.
 type Table struct {
 	table       table.Model
-	style       TableStyle
 	footerText  string
 	helpText    string
 	showHelp    bool
@@ -89,26 +81,26 @@ type TableOption func(*Table)
 func NewTable(opts ...TableOption) *Table {
 	baseStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240"))
+		BorderForeground(lipgloss.Color(getPaleColor()))
 
 	footerStyle := lipgloss.NewStyle().
 		Padding(0, 0, 1, 2).
-		Foreground(lipgloss.Color("240"))
+		Foreground(lipgloss.Color(getPaleColor()))
 
 	helpStyle := lipgloss.NewStyle().
 		Padding(1, 0, 0, 2).
-		Foreground(lipgloss.Color("240"))
+		Foreground(lipgloss.Color(getPaleColor()))
 
 	sorterStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(lipgloss.Color(getPaleColor())).
 		Padding(0, 1).
 		Height(1)
 
 	// Initialize spinner
 	s := spinner.New()
 	s.Spinner = spinner.MiniDot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("62"))
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(getAccentColor()))
 
 	t := &Table{
 		baseStyle:    baseStyle,
@@ -127,28 +119,14 @@ func NewTable(opts ...TableOption) *Table {
 	st := table.DefaultStyles()
 	st.Header = st.Header.
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(lipgloss.Color(getPaleColor())).
 		BorderBottom(true).
 		Bold(true).
-		Foreground(lipgloss.Color("15")).
-		Background(lipgloss.Color("240"))
+		Background(lipgloss.Color(getPaleColor()))
 
-	// Set selection colors based on provided style
-	if t.style.SelectionBackground != "" {
-		bg := lipgloss.Color(t.style.SelectionBackground)
-		st.Selected = st.Selected.Background(bg)
-	} else {
-		st.Selected = st.Selected.Background(lipgloss.Color("57"))
-	}
+	st.Selected = st.Selected.Background(lipgloss.Color(getAccentColor()))
+	st.Selected = st.Selected.Foreground(lipgloss.Color("229"))
 
-	if t.style.SelectionForeground != "" {
-		fg := lipgloss.Color(t.style.SelectionForeground)
-		st.Selected = st.Selected.Foreground(fg)
-	} else {
-		st.Selected = st.Selected.Foreground(lipgloss.Color("229"))
-	}
-
-	st.Selected = st.Selected.Bold(t.style.SelectionTextIsBold)
 	t.table.SetStyles(st)
 
 	for _, opt := range opts {
@@ -156,13 +134,6 @@ func NewTable(opts ...TableOption) *Table {
 	}
 
 	return t
-}
-
-// WithTableStyle sets the style of the table.
-func WithTableStyle(style TableStyle) TableOption {
-	return func(t *Table) {
-		t.style = style
-	}
 }
 
 // WithTableHelpText sets the help text for the view.
@@ -323,7 +294,7 @@ func (t *Table) View() string {
 	// Show spinner if no issues loaded yet
 	if t.allIssues == nil {
 		spinnerStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("205")).
+			Foreground(lipgloss.Color(getAccentColor())).
 			Align(lipgloss.Center).
 			Width(t.viewportWidth).
 			Height(t.viewportHeight)

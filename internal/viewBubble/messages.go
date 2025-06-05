@@ -61,3 +61,7 @@ type IncomingIssueMsg struct {
 	issue *jira.Issue
 	index int
 }
+
+type SetRenderStyleMsg struct {
+	style string
+}

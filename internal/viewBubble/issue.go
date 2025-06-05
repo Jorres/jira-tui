@@ -88,6 +88,8 @@ type IssueModel struct {
 
 	// Spinner for loading state
 	spinner spinner.Model
+
+	lightOrDark string
 }
 
 // RenderedOut translates raw data to the format we want to display in.
@@ -513,6 +515,8 @@ func (iss IssueModel) Update(msg tea.Msg) (IssueModel, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case SetRenderStyleMsg:
+		iss.lightOrDark = msg.style
 	case *jira.Issue:
 		iss.Data = msg
 		// Reset scroll when new issue is loaded
@@ -615,7 +619,11 @@ func (iss *IssueModel) scrollUp() {
 
 // prepareRenderedLines renders the full content and splits it into lines
 func (iss *IssueModel) prepareRenderedLines() {
-	r, err := MDRenderer()
+	if iss.lightOrDark == "" {
+		panic("style not set")
+	}
+
+	r, err := MDRenderer(iss.lightOrDark)
 	if err != nil {
 		cmdutil.ExitIfError(fmt.Errorf("Failed to create an MDRenderer: %w", err))
 	}
@@ -631,7 +639,7 @@ func NewIssueModel(server string) IssueModel {
 	// Initialize spinner
 	s := spinner.New()
 	s.Spinner = spinner.MiniDot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("62"))
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(getAccentColor()))
 
 	iss := IssueModel{
 		Server:                            server,
@@ -682,7 +690,7 @@ func (iss IssueModel) View() string {
 	// Show spinner if no issue data is available
 	if iss.Data == nil {
 		spinnerStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("205")).
+			Foreground(lipgloss.Color(getAccentColor())).
 			Align(lipgloss.Center).
 			Width(iss.viewportWidth).
 			Height(iss.viewportHeight)
