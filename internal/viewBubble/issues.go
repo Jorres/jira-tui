@@ -13,7 +13,6 @@ import (
 	"github.com/ankitpokhrel/jira-cli/internal/debug"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 	"github.com/atotto/clipboard"
-	"github.com/lucasb-eyer/go-colorful"
 	"github.com/spf13/viper"
 
 	"github.com/charmbracelet/bubbles/v2/list"
@@ -85,6 +84,9 @@ func RunMainUI(
 		issueDetailViews: make([]IssueModel, len(tabs)),
 	}
 
+	detect := tea.NewProgram(DetectColorModel{})
+	_, _ = detect.Run()
+
 	p := tea.NewProgram(l, tea.WithAltScreen())
 
 	for i, tabConfig := range tabs {
@@ -131,7 +133,7 @@ func (l *IssueList) setStatusMessage(message string) tea.Cmd {
 
 // Init initializes the IssueList model.
 func (l *IssueList) Init() tea.Cmd {
-	return tea.RequestBackgroundColor
+	return nil
 }
 
 func (l *IssueList) forceRedrawCmd() tea.Cmd {
@@ -340,23 +342,6 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
-	case tea.BackgroundColorMsg:
-		color, _ := colorful.Hex(msg.String())
-		_, _, lum := color.Hsl()
-
-		var style string
-		if lum < 0.5 {
-			style = "dark"
-		} else {
-			style = "light"
-		}
-
-		cmds := l.bulkSendMsgToAllTablesAndIssues(
-			SetRenderStyleMsg{style: style},
-			SetRenderStyleMsg{style: style},
-		)
-
-		return l, tea.Batch(cmds...)
 	case tea.WindowSizeMsg:
 		// Store the full window size
 		l.rawWidth = msg.Width
@@ -601,25 +586,23 @@ func (l *IssueList) View() string {
 	}
 }
 
-// Tab styling (based on tabs.go example)
-func tabBorderWithBottom(left, middle, right string) lipgloss.Border {
-	border := lipgloss.RoundedBorder()
-	border.BottomLeft = left
-	border.Bottom = middle
-	border.BottomRight = right
-	return border
+func activeTabStyle() lipgloss.Style {
+	return lipgloss.
+		NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(getHighlightColor())).
+		Padding(0, 1).
+		Margin(0, 2).
+		Bold(true)
 }
 
-var (
-	inactiveTabBorder = tabBorderWithBottom("┬", "─", "┬")
-	activeTabBorder   = tabBorderWithBottom("┘", " ", "└")
-	grayColor         = lipgloss.Color(getPaleColor())
-	inactiveTabStyle  = lipgloss.NewStyle().Border(inactiveTabBorder, true).BorderForeground(grayColor).Padding(0, 1)
-)
-
-// getActiveTabStyle returns the active tab style with the current accent color
-func getActiveTabStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Border(activeTabBorder, true).BorderForeground(lipgloss.Color(getHighlightColor())).Padding(0, 1)
+func inactiveTabStyle() lipgloss.Style {
+	return lipgloss.
+		NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(getPaleColor())).
+		Padding(0, 1).
+		Bold(false)
 }
 
 // renderTabs renders the tab bar
@@ -634,9 +617,9 @@ func (l *IssueList) renderTabs() string {
 		var style lipgloss.Style
 		isActive := i == l.activeTab
 		if isActive {
-			style = getActiveTabStyle()
+			style = activeTabStyle()
 		} else {
-			style = inactiveTabStyle
+			style = inactiveTabStyle()
 		}
 		border, _, _, _, _ := style.GetBorder()
 		style = style.Border(border).BorderBottom(false)

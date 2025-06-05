@@ -88,8 +88,6 @@ type IssueModel struct {
 
 	// Spinner for loading state
 	spinner spinner.Model
-
-	lightOrDark string
 }
 
 // RenderedOut translates raw data to the format we want to display in.
@@ -515,8 +513,6 @@ func (iss IssueModel) Update(msg tea.Msg) (IssueModel, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
-	case SetRenderStyleMsg:
-		iss.lightOrDark = msg.style
 	case *jira.Issue:
 		iss.Data = msg
 		// Reset scroll when new issue is loaded
@@ -619,11 +615,7 @@ func (iss *IssueModel) scrollUp() {
 
 // prepareRenderedLines renders the full content and splits it into lines
 func (iss *IssueModel) prepareRenderedLines() {
-	if iss.lightOrDark == "" {
-		panic("style not set")
-	}
-
-	r, err := MDRenderer(iss.lightOrDark)
+	r, err := MDRenderer(getCurrentTheme())
 	if err != nil {
 		cmdutil.ExitIfError(fmt.Errorf("Failed to create an MDRenderer: %w", err))
 	}
