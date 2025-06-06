@@ -2,6 +2,7 @@ package viewBubble
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/ankitpokhrel/jira-cli/api"
@@ -22,12 +23,6 @@ const (
 const (
 	sorterHeight = 3
 )
-
-// DisplayFormat is a issue display type.
-type DisplayFormat struct {
-	Columns  []string
-	Timezone string
-}
 
 // TableData is the data to be displayed in a table.
 type TableData [][]string
@@ -57,7 +52,8 @@ type Table struct {
 
 	err error
 
-	displayFormat DisplayFormat
+	columns  []string
+	timezone string
 
 	allIssues      []*jira.Issue
 	filteredIssues []*jira.Issue
@@ -394,8 +390,12 @@ func (t *Table) SetDefaultFooterText() {
 	t.footerText = fmt.Sprintf("")
 }
 
-func (t *Table) SetDisplayFormat(displayFormat DisplayFormat) {
-	t.displayFormat = displayFormat
+func (t *Table) SetColumns(columns []string) {
+	t.columns = columns
+}
+
+func (t *Table) SetTimezone(timezone string) {
+	t.timezone = timezone
 }
 
 // data prepares the data for table view.
@@ -413,50 +413,15 @@ func (t *Table) makeTableData(issues []*jira.Issue) TableData {
 
 // header prepares table headers.
 func (t *Table) header() []string {
-	if len(t.displayFormat.Columns) > 0 {
-		headers := []string{}
-		columnsMap := t.validColumnsMap()
-		for _, c := range t.displayFormat.Columns {
-			c = strings.ToUpper(c)
-			if _, ok := columnsMap[c]; ok {
-				headers = append(headers, strings.ToUpper(c))
-			}
+	headers := []string{}
+	for _, c := range t.columns {
+		c = strings.ToUpper(c)
+		if slices.Contains(ValidIssueColumns(), c) {
+			headers = append(headers, c)
 		}
-
-		return headers
 	}
 
-	return validIssueColumns()
-}
-
-// validColumnsMap returns a map of valid columns.
-func (*Table) validColumnsMap() map[string]struct{} {
-	columns := validIssueColumns()
-	out := make(map[string]struct{}, len(columns))
-
-	for _, c := range columns {
-		out[c] = struct{}{}
-	}
-
-	return out
-}
-
-// validIssueColumns returns valid columns for issue list.
-func validIssueColumns() []string {
-	return []string{
-		FieldKey,
-		FieldType,
-		FieldParent,
-		FieldSummary,
-		FieldStatus,
-		FieldAssignee,
-		FieldReporter,
-		// FieldResolution,
-		FieldCreated,
-		FieldPriority,
-		// FieldUpdated,
-		// FieldLabels,
-	}
+	return headers
 }
 
 // assignColumns assigns columns for the issue.
@@ -467,14 +432,14 @@ func (t *Table) assignColumns(columns []string, issue *jira.Issue) []string {
 		switch column {
 		case FieldType:
 			bucket = append(bucket, issue.Fields.IssueType.Name)
-		case FieldKey:
-			bucket = append(bucket, issue.Key)
 		case FieldParent:
 			if issue.Fields.Parent != nil {
 				bucket = append(bucket, issue.Fields.Parent.Key)
 			} else {
 				bucket = append(bucket, "")
 			}
+		case FieldKey:
+			bucket = append(bucket, issue.Key)
 		case FieldSummary:
 			bucket = append(bucket, prepareTitle(issue.Fields.Summary))
 		case FieldStatus:
@@ -488,9 +453,9 @@ func (t *Table) assignColumns(columns []string, issue *jira.Issue) []string {
 		case FieldResolution:
 			bucket = append(bucket, issue.Fields.Resolution.Name)
 		case FieldCreated:
-			bucket = append(bucket, FormatDateTime(issue.Fields.Created, jira.RFC3339, t.displayFormat.Timezone))
+			bucket = append(bucket, FormatDateTime(issue.Fields.Created, jira.RFC3339, t.timezone))
 		case FieldUpdated:
-			bucket = append(bucket, FormatDateTime(issue.Fields.Updated, jira.RFC3339, t.displayFormat.Timezone))
+			bucket = append(bucket, FormatDateTime(issue.Fields.Updated, jira.RFC3339, t.timezone))
 		case FieldLabels:
 			bucket = append(bucket, strings.Join(issue.Fields.Labels, ","))
 		}

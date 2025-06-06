@@ -56,7 +56,6 @@ type IssueOption struct {
 type IssueModel struct {
 	Server  string
 	Data    *jira.Issue
-	Display DisplayFormat
 	Options IssueOption
 
 	// Original window dimensions
@@ -609,7 +608,13 @@ func (iss *IssueModel) scrollUp() {
 
 // prepareRenderedLines renders the full content and splits it into lines
 func (iss *IssueModel) prepareRenderedLines() {
-	r, err := MDRenderer(getCurrentTheme())
+	// Use 80% of viewport width for markdown rendering
+	renderWidth := int(float32(iss.viewportWidth) * 0.8)
+	if renderWidth < 40 { // minimum width for readability
+		renderWidth = 40
+	}
+	
+	r, err := MDRendererWithWidth(getCurrentTheme(), renderWidth)
 	if err != nil {
 		cmdutil.ExitIfError(fmt.Errorf("Failed to create an MDRenderer: %w", err))
 	}

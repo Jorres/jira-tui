@@ -50,15 +50,13 @@ func ui(cmd *cobra.Command, args []string) {
 	columns, err := cmd.Flags().GetString("columns")
 	cmdutil.ExitIfError(err)
 
-	d := viewBubble.DisplayFormat{
-		Columns: func() []string {
-			if columns != "" {
-				return strings.Split(columns, ",")
-			}
-			return []string{}
-		}(),
-		Timezone: viper.GetString("timezone"),
-	}
+	columnsList := func() []string {
+		if columns != "" {
+			return strings.Split(columns, ",")
+		}
+		return []string{}
+	}()
+	timezone := viper.GetString("timezone")
 
 	projectType := viper.GetString("project.type")
 	epicQ := query.NewDefaultIssue(project, cmd.Flags())
@@ -88,6 +86,7 @@ func ui(cmd *cobra.Command, args []string) {
 			{
 				Project:     project,
 				Name:        "Issues",
+				Columns:     columnsList,
 				FetchIssues: fetchIssuesWithArgs,
 				FetchEpics:  fetchAllEpics,
 			},
@@ -107,18 +106,20 @@ func ui(cmd *cobra.Command, args []string) {
 			tabs[i] = &viewBubble.TabConfig{
 				Project:     tabProject,
 				Name:        tabConfig.Name,
+				Columns:     tabConfig.Columns,
 				FetchIssues: fetchIssues,
 				FetchEpics:  fetchAllEpics,
 			}
 		}
 	}
 
-	viewBubble.RunMainUI(project, server, total, tabs, d, debug)
+	viewBubble.RunMainUI(project, server, total, tabs, timezone, debug)
 }
 
 type ListTabConfig struct {
-	Name              string `mapstructure:"name"`
-	Project           string `mapstructure:"project"`
+	Name              string   `mapstructure:"name"`
+	Project           string   `mapstructure:"project"`
+	Columns           []string `mapstructure:"columns"`
 	query.IssueParams `mapstructure:",squash"`
 }
 

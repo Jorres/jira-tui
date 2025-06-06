@@ -1,22 +1,25 @@
 package viewBubble
 
 const (
-	FieldID           = "ID"
-	FieldName         = "NAME"
-	FieldType         = "TYPE"
-	FieldParent       = "PARENT"
-	FieldKey          = "KEY"
-	FieldSummary      = "SUMMARY"
-	FieldStatus       = "STATUS"
-	FieldState        = "STATE"
-	FieldAssignee     = "ASSIGNEE"
-	FieldReporter     = "REPORTER"
-	FieldPriority     = "PRIORITY"
-	FieldResolution   = "RESOLUTION"
-	FieldCreated      = "CREATED"
-	FieldUpdated      = "UPDATED"
-	FieldStartDate    = "START"
-	FieldEndDate      = "END"
-	FieldCompleteDate = "COMPLETE"
-	FieldLabels       = "LABELS"
+	FieldType       = "TYPE"
+	FieldParent     = "PARENT"
+	FieldKey        = "KEY"
+	FieldSummary    = "SUMMARY"
+	FieldStatus     = "STATUS"
+	FieldAssignee   = "ASSIGNEE"
+	FieldReporter   = "REPORTER"
+	FieldPriority   = "PRIORITY"
+	FieldResolution = "RESOLUTION"
+	FieldCreated    = "CREATED"
+	FieldUpdated    = "UPDATED"
+	FieldLabels     = "LABELS"
 )
+
+// ValidIssueColumns returns the list of valid column names for help text
+func ValidIssueColumns() []string {
+	return []string{
+		FieldType, FieldParent, FieldKey, FieldSummary, FieldStatus,
+		FieldAssignee, FieldReporter, FieldPriority, FieldResolution,
+		FieldCreated, FieldUpdated, FieldLabels,
+	}
+}

@@ -11,22 +11,6 @@ import (
 	"github.com/mgutz/ansi"
 )
 
-// ValidIssueColumns returns valid columns for issue list.
-func ValidIssueColumns() []string {
-	return []string{
-		FieldType,
-		FieldKey,
-		FieldSummary,
-		FieldStatus,
-		FieldAssignee,
-		FieldReporter,
-		FieldPriority,
-		FieldResolution,
-		FieldCreated,
-		FieldUpdated,
-		FieldLabels,
-	}
-}
 
 func FormatDateTime(dt, format, tz string) string {
 	t, err := time.Parse(format, dt)
@@ -34,13 +18,13 @@ func FormatDateTime(dt, format, tz string) string {
 		return dt
 	}
 	if tz == "" {
-		return t.Format("2006-01-02 15:04:05")
+		return t.Format("2006-01-02 15:04")
 	}
 	loc, err := time.LoadLocation(tz)
 	if err != nil {
 		return dt
 	}
-	return t.In(loc).Format("2006-01-02 15:04:05")
+	return t.In(loc).Format("2006-01-02 15:04")
 }
 
 func prepareTitle(text string) string {
@@ -75,6 +59,14 @@ func MDRenderer(lightOrDark string) (*glamour.TermRenderer, error) {
 	return glamour.NewTermRenderer(
 		glamour.WithStandardStyle(lightOrDark),
 		glamour.WithWordWrap(wordWrap),
+	)
+}
+
+// MDRendererWithWidth constructs markdown renderer with custom width.
+func MDRendererWithWidth(lightOrDark string, width int) (*glamour.TermRenderer, error) {
+	return glamour.NewTermRenderer(
+		glamour.WithStandardStyle(lightOrDark),
+		glamour.WithWordWrap(width),
 	)
 }
 

@@ -23,10 +23,29 @@ import (
 
 var _ = debug.Debug
 
+// getDefaultIssueColumns returns the default columns for issue list.
+func getDefaultIssueColumns() []string {
+	return []string{
+		FieldKey,
+		FieldType,
+		FieldParent,
+		FieldSummary,
+		FieldStatus,
+		FieldAssignee,
+		FieldReporter,
+		FieldCreated,
+		FieldPriority,
+		FieldResolution,
+		FieldUpdated,
+		FieldLabels,
+	}
+}
+
 // TabConfig holds configuration for a single tab
 type TabConfig struct {
 	Name        string
 	Project     string
+	Columns     []string
 	FetchIssues func() ([]*jira.Issue, int)
 	FetchEpics  func() ([]*jira.Issue, int)
 }
@@ -65,7 +84,7 @@ func RunMainUI(
 	project, server string,
 	total int,
 	tabs []*TabConfig,
-	displayFormat DisplayFormat,
+	timezone string,
 	debug bool,
 ) *IssueList {
 	const tableHelpText = "?: toggle help"
@@ -93,7 +112,15 @@ func RunMainUI(
 		table := NewTable(
 			WithTableHelpText(splitViewHelpText),
 		)
-		table.SetDisplayFormat(displayFormat)
+		
+		// Use default columns if not specified in tab config
+		columnsToUse := tabConfig.Columns
+		if len(columnsToUse) == 0 {
+			columnsToUse = getDefaultIssueColumns()
+		}
+		
+		table.SetColumns(columnsToUse)
+		table.SetTimezone(timezone)
 
 		l.tables[i] = table
 		l.issueDetailViews[i] = NewIssueModel(l.Server)
