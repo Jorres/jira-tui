@@ -10,7 +10,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/ankitpokhrel/jira-cli/internal/debug"
 )
+
+var _ = debug.Debug
 
 const separatorMinus = "-"
 
@@ -66,6 +70,8 @@ func (c *Client) Edit(key string, req *EditRequest) error {
 	if err != nil {
 		return err
 	}
+
+	// debug.Fatal(string(body))
 
 	res, err := c.Put(context.Background(), "/issue/"+key, body, Header{
 		"Accept":       "application/json",

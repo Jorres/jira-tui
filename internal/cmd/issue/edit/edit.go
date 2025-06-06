@@ -66,6 +66,22 @@ func NewCmdEdit() *cobra.Command {
 	return &cmd
 }
 
+func checkForUnsupportedNodeTypes(translator *adf2md.Translator, doc *adf.ADFNode) {
+	unsupported := translator.CheckSupport(doc)
+	if len(unsupported) > 0 {
+		keys := make([]adf.NodeType, 0, len(unsupported))
+		for nt := range unsupported {
+			keys = append(keys, nt)
+		}
+		cmdutil.ExitIfError(fmt.Errorf(
+			"You are trying to edit an issue which contains following item types: %v.\n"+
+				"If edited, sending this to Jira server will corrupt your issue.\n"+
+				"Please wait for md -> adf serialization support for these types",
+			keys,
+		))
+	}
+}
+
 func edit(cmd *cobra.Command, args []string) {
 	server := viper.GetString("server")
 	project := viper.GetString("project.key")
@@ -92,20 +108,21 @@ func edit(cmd *cobra.Command, args []string) {
 		originalBody string
 	)
 
-	var reverseTranslator *adf2md.Translator
+	var adf2mdTranslator *adf2md.Translator
 	// Create a user email resolver function
 	emailResolver := func(userID string) string {
 		return resolveUserIDToEmail(userID, client, project)
 	}
 
-	reverseTranslator = adf2md.NewTranslator(adf2md.NewJiraMarkdownTranslator(
+	adf2mdTranslator = adf2md.NewTranslator(adf2md.NewJiraMarkdownTranslator(
 		adf2md.WithUserEmailResolver(emailResolver),
 	))
 
 	if issue.Fields.Description != nil {
 		if adfBody, ok := issue.Fields.Description.(*adf.ADFNode); ok {
 			isADF = true
-			originalBody = reverseTranslator.Translate(adfBody)
+			checkForUnsupportedNodeTypes(adf2mdTranslator, adfBody)
+			originalBody = adf2mdTranslator.Translate(adfBody)
 		} else {
 			originalBody = issue.Fields.Description.(string)
 		}
@@ -128,7 +145,8 @@ func edit(cmd *cobra.Command, args []string) {
 			// Convert comment body from ADF to markdown if needed
 			var commentBody string
 			if adfBody, ok := comment.Body.(*adf.ADFNode); ok {
-				commentBody = reverseTranslator.Translate(adfBody)
+				checkForUnsupportedNodeTypes(adf2mdTranslator, adfBody)
+				commentBody = adf2mdTranslator.Translate(adfBody)
 			} else {
 				commentBody = comment.Body.(string)
 			}
@@ -222,7 +240,7 @@ func edit(cmd *cobra.Command, args []string) {
 		body := params.body
 		bodyIsRawADF := false
 		if isADF && body != "" {
-			adfBody, convErr := convertMarkdownToADF(body, client, project, reverseTranslator)
+			adfBody, convErr := convertMarkdownToADF(body, client, project, adf2mdTranslator)
 			if convErr != nil {
 				cmdutil.ExitIfError(fmt.Errorf("Failed to convert markdown to adf, this may be a translator bug; %w"))
 			} else {
@@ -240,7 +258,7 @@ func edit(cmd *cobra.Command, args []string) {
 			commentBodyIsRawADF := false
 
 			if isADF && commentBody != "" {
-				adfBody, convErr := convertMarkdownToADF(commentBody, client, project, reverseTranslator)
+				adfBody, convErr := convertMarkdownToADF(commentBody, client, project, adf2mdTranslator)
 				if convErr != nil {
 					cmdutil.ExitIfError(fmt.Errorf("Failed to convert markdown to adf, this may be a translator bug; %w"))
 				} else {

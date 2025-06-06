@@ -1,7 +1,6 @@
 package viewBubble
 
 import (
-	"github.com/ankitpokhrel/jira-cli/internal/debug"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/lucasb-eyer/go-colorful"
 	"github.com/spf13/viper"
@@ -32,7 +31,6 @@ func getPaleColor() string {
 		return color
 	}
 
-	debug.Debug(globalBackgroundColor)
 	if currentTheme == "dark" {
 		return "240"
 	} else {

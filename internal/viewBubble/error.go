@@ -55,7 +55,7 @@ func (m ErrorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View renders the error modal
 func (m ErrorModel) View() string {
 	// Modal dimensions - make it smaller than full screen
-	modalWidth := min(80, m.width-4)
+	modalWidth := min(100, m.width-4)
 	modalHeight := min(20, m.height-4)
 
 	// Content area inside the border
