@@ -158,6 +158,11 @@ func edit(cmd *cobra.Command, args []string) {
 	// Update originalBody to include comments for the editor
 	originalBody = contentWithComments
 
+	// HACK. TODO think of a better solution
+	// otherwise if we insert inline node into panel, '{/panel}' would
+	// literally become part of a paragraph
+	strings.ReplaceAll(originalBody, "{/panel}", "\n{/panel}")
+
 	cmdutil.ExitIfError(ec.askQuestions(issue, originalBody))
 
 	if !params.noInput {
