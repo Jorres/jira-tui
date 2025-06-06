@@ -6,8 +6,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
-	"github.com/ankitpokhrel/jira-cli/pkg/browser"
+	"github.com/jorres/jira-tui/internal/cmdutil"
+	"github.com/jorres/jira-tui/pkg/browser"
 )
 
 const (

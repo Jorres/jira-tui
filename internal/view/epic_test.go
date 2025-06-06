@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/ankitpokhrel/jira-cli/pkg/jira"
-	"github.com/ankitpokhrel/jira-cli/pkg/tui"
+	"github.com/jorres/jira-tui/pkg/jira"
+	"github.com/jorres/jira-tui/pkg/tui"
 )
 
 func TestEpicData(t *testing.T) {

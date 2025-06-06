@@ -13,10 +13,10 @@ import (
 	"md-adf-exp/adf"
 	"md-adf-exp/adf2md"
 
-	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
-	"github.com/ankitpokhrel/jira-cli/pkg/jira"
-	"github.com/ankitpokhrel/jira-cli/pkg/md"
-	"github.com/ankitpokhrel/jira-cli/pkg/tui"
+	"github.com/jorres/jira-tui/internal/cmdutil"
+	"github.com/jorres/jira-tui/pkg/jira"
+	"github.com/jorres/jira-tui/pkg/md"
+	"github.com/jorres/jira-tui/pkg/tui"
 )
 
 const defaultSummaryLength = 73 // +1 to take ellipsis '…' into account.

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ankitpokhrel/jira-cli/pkg/jira"
+	"github.com/jorres/jira-tui/pkg/jira"
 )
 
 // Supported datetime layouts.

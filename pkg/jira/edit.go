@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ankitpokhrel/jira-cli/internal/debug"
+	"github.com/jorres/jira-tui/internal/debug"
 )
 
 var _ = debug.Debug

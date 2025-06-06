@@ -14,10 +14,10 @@ import (
 	"md-adf-exp/adf"
 	"md-adf-exp/adf2md"
 
-	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
-	"github.com/ankitpokhrel/jira-cli/internal/debug"
-	"github.com/ankitpokhrel/jira-cli/pkg/jira"
-	"github.com/ankitpokhrel/jira-cli/pkg/md"
+	"github.com/jorres/jira-tui/internal/cmdutil"
+	"github.com/jorres/jira-tui/internal/debug"
+	"github.com/jorres/jira-tui/pkg/jira"
+	"github.com/jorres/jira-tui/pkg/md"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"

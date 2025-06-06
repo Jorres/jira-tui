@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ankitpokhrel/jira-cli/api"
-	"github.com/ankitpokhrel/jira-cli/pkg/jira"
-	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter/issue"
+	"github.com/jorres/jira-tui/api"
+	"github.com/jorres/jira-tui/pkg/jira"
+	"github.com/jorres/jira-tui/pkg/jira/filter/issue"
 	"github.com/charmbracelet/bubbles/v2/spinner"
 	"github.com/charmbracelet/bubbles/v2/table"
 	tea "github.com/charmbracelet/bubbletea/v2"

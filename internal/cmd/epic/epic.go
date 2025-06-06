@@ -3,10 +3,10 @@ package epic
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/ankitpokhrel/jira-cli/internal/cmd/epic/add"
-	"github.com/ankitpokhrel/jira-cli/internal/cmd/epic/create"
-	"github.com/ankitpokhrel/jira-cli/internal/cmd/epic/list"
-	"github.com/ankitpokhrel/jira-cli/internal/cmd/epic/remove"
+	"github.com/jorres/jira-tui/internal/cmd/epic/add"
+	"github.com/jorres/jira-tui/internal/cmd/epic/create"
+	"github.com/jorres/jira-tui/internal/cmd/epic/list"
+	"github.com/jorres/jira-tui/internal/cmd/epic/remove"
 )
 
 const helpText = `Epic manage epics in a given project. See available commands below.`

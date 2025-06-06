@@ -1,7 +1,7 @@
 package viewBubble
 
 import (
-	"github.com/ankitpokhrel/jira-cli/pkg/jira"
+	"github.com/jorres/jira-tui/pkg/jira"
 	"github.com/charmbracelet/bubbles/v2/list"
 )
 

@@ -5,9 +5,9 @@ import (
 	"strconv"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/ankitpokhrel/jira-cli/api"
-	"github.com/ankitpokhrel/jira-cli/internal/cmdutil"
-	"github.com/ankitpokhrel/jira-cli/internal/query"
+	"github.com/jorres/jira-tui/api"
+	"github.com/jorres/jira-tui/internal/cmdutil"
+	"github.com/jorres/jira-tui/internal/query"
 	"github.com/spf13/cobra"
 )
 

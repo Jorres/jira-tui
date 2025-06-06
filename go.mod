@@ -1,4 +1,4 @@
-module github.com/ankitpokhrel/jira-cli
+module github.com/jorres/jira-tui
 
 go 1.24.0
 

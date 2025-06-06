@@ -3,7 +3,7 @@ package project
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/ankitpokhrel/jira-cli/internal/cmd/project/list"
+	"github.com/jorres/jira-tui/internal/cmd/project/list"
 )
 
 const helpText = `Project manages Jira projects. See available commands below.`

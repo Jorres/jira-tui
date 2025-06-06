@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter/issue"
+	"github.com/jorres/jira-tui/pkg/jira/filter/issue"
 
 	"md-adf-exp/adf"
 
-	"github.com/ankitpokhrel/jira-cli/pkg/jira/filter"
-	"github.com/ankitpokhrel/jira-cli/pkg/md"
+	"github.com/jorres/jira-tui/pkg/jira/filter"
+	"github.com/jorres/jira-tui/pkg/md"
 )
 
 const (

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ankitpokhrel/jira-cli/pkg/md"
+	"github.com/jorres/jira-tui/pkg/md"
 	"md-adf-exp/adf"
 )
 
