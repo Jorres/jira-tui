@@ -527,7 +527,6 @@ func (iss IssueModel) Update(msg tea.Msg) (IssueModel, tea.Cmd) {
 				iss.firstVisibleLine = 0
 			} else {
 				iss.currentlyHighlightedLinkPos++
-
 				// scroll down until the link is visible
 				for {
 					iss.prepareRenderedLines()
@@ -537,7 +536,12 @@ func (iss IssueModel) Update(msg tea.Msg) (IssueModel, tea.Cmd) {
 						break
 					}
 
+					visibleNow := iss.firstVisibleLine
 					iss.scrollDown()
+					visibleAfterScroll := iss.firstVisibleLine
+					if visibleNow == visibleAfterScroll {
+						iss.firstVisibleLine = 0
+					}
 				}
 			}
 		}
