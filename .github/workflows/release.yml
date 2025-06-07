@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+
+    - name: Build for Linux
+      run: |
+        go build -ldflags="-s -w -X github.com/jorres/jira-tui/internal/version.GitCommit=${{ github.sha }} -X github.com/jorres/jira-tui/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X github.com/jorres/jira-tui/internal/version.Version=${{ github.ref_name }}" -o jira-linux-amd64 ./cmd/jira/main.go
+
+    - name: Upload Linux artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: jira-linux-amd64
+        path: jira-linux-amd64
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+
+    - name: Build for Windows
+      run: |
+        go build -ldflags="-s -w -X github.com/jorres/jira-tui/internal/version.GitCommit=${{ github.sha }} -X github.com/jorres/jira-tui/internal/version.BuildTime=$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ' -AsUTC) -X github.com/jorres/jira-tui/internal/version.Version=${{ github.ref_name }}" -o jira-windows-amd64.exe ./cmd/jira/main.go
+      env:
+        GOOS: windows
+        GOARCH: amd64
+
+    - name: Upload Windows artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: jira-windows-amd64
+        path: jira-windows-amd64.exe
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+
+    - name: Build for macOS ARM64
+      run: |
+        go build -ldflags="-s -w -X github.com/jorres/jira-tui/internal/version.GitCommit=${{ github.sha }} -X github.com/jorres/jira-tui/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X github.com/jorres/jira-tui/internal/version.Version=${{ github.ref_name }}" -o jira-darwin-arm64 ./cmd/jira/main.go
+      env:
+        GOOS: darwin
+        GOARCH: arm64
+
+    - name: Upload macOS artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: jira-darwin-arm64
+        path: jira-darwin-arm64
