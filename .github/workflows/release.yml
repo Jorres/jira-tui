@@ -22,13 +22,18 @@ jobs:
 
     - name: Build for Linux
       run: |
-        go build -ldflags="-s -w -X github.com/jorres/jira-tui/internal/version.GitCommit=${{ github.sha }} -X github.com/jorres/jira-tui/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X github.com/jorres/jira-tui/internal/version.Version=${{ github.ref_name }}" -o jira-linux-amd64 ./cmd/jira/main.go
+        LDFLAGS="-s -w"
+        LDFLAGS="$LDFLAGS -X github.com/jorres/jira-tui/internal/version.GitCommit=${{ github.sha }}"
+        LDFLAGS="$LDFLAGS -X github.com/jorres/jira-tui/internal/version.SourceDateEpoch=$(git log -1 --format=%ct)"
+        LDFLAGS="$LDFLAGS -X github.com/jorres/jira-tui/internal/version.Version=${{ github.ref_name }}"
+        go build -ldflags="$LDFLAGS" -o jira-linux-amd64 ./cmd/jira/main.go
+        tar -czf jira-linux-amd64.tar.gz jira-linux-amd64
 
     - name: Upload Linux artifact
       uses: actions/upload-artifact@v4
       with:
         name: jira-linux-amd64
-        path: jira-linux-amd64
+        path: jira-linux-amd64.tar.gz
 
   build-windows:
     runs-on: windows-latest
@@ -45,7 +50,11 @@ jobs:
 
     - name: Build for Windows
       run: |
-        go build -ldflags="-s -w -X github.com/jorres/jira-tui/internal/version.GitCommit=${{ github.sha }} -X github.com/jorres/jira-tui/internal/version.BuildTime=$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ' -AsUTC) -X github.com/jorres/jira-tui/internal/version.Version=${{ github.ref_name }}" -o jira-windows-amd64.exe ./cmd/jira/main.go
+        $LDFLAGS="-s -w"
+        $LDFLAGS="$LDFLAGS -X github.com/jorres/jira-tui/internal/version.GitCommit=${{ github.sha }}"
+        $LDFLAGS="$LDFLAGS -X github.com/jorres/jira-tui/internal/version.SourceDateEpoch=$(git log -1 --format=%ct)"
+        $LDFLAGS="$LDFLAGS -X github.com/jorres/jira-tui/internal/version.Version=${{ github.ref_name }}"
+        go build -ldflags="$LDFLAGS" -o jira-windows-amd64.exe ./cmd/jira/main.go
       env:
         GOOS: windows
         GOARCH: amd64
@@ -71,7 +80,12 @@ jobs:
 
     - name: Build for macOS ARM64
       run: |
-        go build -ldflags="-s -w -X github.com/jorres/jira-tui/internal/version.GitCommit=${{ github.sha }} -X github.com/jorres/jira-tui/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X github.com/jorres/jira-tui/internal/version.Version=${{ github.ref_name }}" -o jira-darwin-arm64 ./cmd/jira/main.go
+        LDFLAGS="-s -w"
+        LDFLAGS="$LDFLAGS -X github.com/jorres/jira-tui/internal/version.GitCommit=${{ github.sha }}"
+        LDFLAGS="$LDFLAGS -X github.com/jorres/jira-tui/internal/version.SourceDateEpoch=$(git log -1 --format=%ct)"
+        LDFLAGS="$LDFLAGS -X github.com/jorres/jira-tui/internal/version.Version=${{ github.ref_name }}"
+        go build -ldflags="$LDFLAGS" -o jira-darwin-arm64 ./cmd/jira/main.go
+        tar -czf jira-darwin-arm64.tar.gz jira-darwin-arm64
       env:
         GOOS: darwin
         GOARCH: arm64
@@ -80,4 +94,46 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: jira-darwin-arm64
-        path: jira-darwin-arm64
+        path: jira-darwin-arm64.tar.gz
+
+  release:
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          artifacts/jira-linux-amd64/jira-linux-amd64.tar.gz
+          artifacts/jira-windows-amd64/jira-windows-amd64.exe
+          artifacts/jira-darwin-arm64/jira-darwin-arm64.tar.gz
+        body: |
+          ## Release ${{ github.ref_name }}
+          
+          This release contains binaries for:
+          - Linux (x86_64) - `jira-linux-amd64.tar.gz`
+          - Windows (x86_64) - `jira-windows-amd64.exe`
+          - macOS (ARM64) - `jira-darwin-arm64.tar.gz`
+          
+          Download the appropriate binary for your platform and extract (if needed).
+          
+          ### Installation
+          ```bash
+          # Linux/macOS
+          tar -xzf jira-*.tar.gz
+          chmod +x jira-*
+          mv jira-* /usr/local/bin/jira
+          
+          # Windows
+          # Just run the .exe file
+          ```
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
