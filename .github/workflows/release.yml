@@ -17,33 +17,28 @@ jobs:
             goarch: amd64
             binary: jira-linux-x86_64
             archive: tar.gz
-            cgo: 1
           - os: ubuntu-24.04-arm
             goos: linux
             goarch: arm64
             binary: jira-linux-arm64
             archive: tar.gz
-            cgo: 1
           # Windows builds
           - os: windows-latest
             goos: windows
             goarch: amd64
             binary: jira-windows-x86_64
             archive: zip
-            cgo: 1
           # macOS builds
           - os: macos-latest
             goos: darwin
             goarch: arm64
             binary: jira-macOS-arm64
             archive: tar.gz
-            cgo: 1
           - os: macos-13
             goos: darwin
             goarch: amd64
             binary: jira-macOS-x86_64
             archive: tar.gz
-            cgo: 1
     runs-on: ${{ matrix.os }}
     steps:
     - name: Checkout
@@ -67,7 +62,7 @@ jobs:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
         GOARM: ${{ matrix.goarm }}
-        CGO_ENABLED: ${{ matrix.cgo }}
+        CGO_ENABLED: 1
       shell: bash
 
     - name: Create archive (Linux/macOS)

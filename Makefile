@@ -32,10 +32,7 @@ export GOCACHE ?= $(CURDIR)/.gocache
 
 all: build
 
-deps:
-	go mod vendor -v
-
-build: deps
+build:
 	go build -ldflags='$(LDFLAGS)' ./...
 
 install:
