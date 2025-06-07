@@ -11,8 +11,8 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/viper"
 
-	"md-adf-exp/adf"
-	"md-adf-exp/adf2md"
+	"github.com/jorres/md2adf-translator/adf"
+	"github.com/jorres/md2adf-translator/adf2md"
 
 	"github.com/jorres/jira-tui/internal/cmdutil"
 	"github.com/jorres/jira-tui/internal/debug"

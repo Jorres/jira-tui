@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/jorres/jira-tui/pkg/md"
-	"md-adf-exp/adf"
+	"github.com/jorres/md2adf-translator/adf"
 )
 
 // CreateResponse struct holds response from POST /issue endpoint.

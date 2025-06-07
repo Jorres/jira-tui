@@ -8,7 +8,7 @@ import (
 
 	"github.com/jorres/jira-tui/pkg/jira"
 	"github.com/jorres/jira-tui/pkg/tui"
-	"md-adf-exp/adf"
+	"github.com/jorres/md2adf-translator/adf"
 )
 
 func TestIssueDetailsRenderInPlainView(t *testing.T) {

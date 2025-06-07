@@ -10,7 +10,7 @@ import (
 
 	"github.com/jorres/jira-tui/pkg/jira/filter/issue"
 
-	"md-adf-exp/adf"
+	"github.com/jorres/md2adf-translator/adf"
 
 	"github.com/jorres/jira-tui/pkg/jira/filter"
 	"github.com/jorres/jira-tui/pkg/md"

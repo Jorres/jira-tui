@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"md-adf-exp/adf"
+	"github.com/jorres/md2adf-translator/adf"
 )
 
 const (

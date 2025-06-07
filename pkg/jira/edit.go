@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"md-adf-exp/md2adf"
+	"github.com/jorres/md2adf-translator/md2adf"
 	"net/http"
 	"slices"
 	"strconv"

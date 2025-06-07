@@ -10,8 +10,8 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/fatih/color"
 
-	"md-adf-exp/adf"
-	"md-adf-exp/adf2md"
+	"github.com/jorres/md2adf-translator/adf"
+	"github.com/jorres/md2adf-translator/adf2md"
 
 	"github.com/jorres/jira-tui/internal/cmdutil"
 	"github.com/jorres/jira-tui/pkg/jira"

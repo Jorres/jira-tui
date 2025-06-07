@@ -12,7 +12,7 @@ import (
 	"github.com/jorres/jira-tui/internal/cmdutil"
 	"github.com/jorres/jira-tui/internal/query"
 	"github.com/jorres/jira-tui/pkg/jira"
-	"md-adf-exp/adf"
+	"github.com/jorres/md2adf-translator/adf"
 )
 
 const (

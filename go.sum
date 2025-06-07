@@ -90,6 +90,10 @@ github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02 h1:AgcIVYPa6XJnU3phs
 github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02/go.mod h1:Q48J4R4DvxnHolD5P8pOtXigYlRuPLGl6moFx3ulM68=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
+github.com/jorres/md2adf-translator v0.1.1 h1:VfX5niafILhc/XL5/dJKfOtBkz1dStNcE/Qf4DQyneE=
+github.com/jorres/md2adf-translator v0.1.1/go.mod h1:7+2bbgQnQxKIEqlFXhgL43dp2fVQQ1i5koplrqDrlFc=
+github.com/jorres/tree-sitter-jira-markdown v0.6.0 h1:46xddib5cPQ++8eUZvbYGq+SgLlMDJF5HzPkBVR7Ahg=
+github.com/jorres/tree-sitter-jira-markdown v0.6.0/go.mod h1:nJXdKshY/PpoaYJsxMI8fywHDmRTR5rqbwymvnr4dn0=
 github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 h1:Z9n2FFNUXsshfwJMBgNA0RU6/i7WVaAegv3PtuIHPMs=
 github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51/go.mod h1:CzGEWj7cYgsdH8dAjBGEr58BoE7ScuLd+fwFZ44+/x8=
 github.com/kentaro-m/blackfriday-confluence v0.0.0-20220126124413-8e85477b49b3 h1:BCMUqjR9XyAWI5JVSJpQFQR1iYYHvwcVuapyqAAuHtE=
