@@ -7,77 +7,129 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-linux:
+  build:
+    strategy:
+      matrix:
+        include:
+          # Linux builds
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            binary: jira-linux-x86_64
+            archive: tar.gz
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            binary: jira-linux-arm64
+            archive: tar.gz
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm
+            goarm: 6
+            binary: jira-linux-armv6
+            archive: tar.gz
+          - os: ubuntu-latest
+            goos: linux
+            goarch: 386
+            binary: jira-linux-i386
+            archive: tar.gz
+          # Windows builds
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            binary: jira-windows-x86_64
+            archive: zip
+          # macOS builds
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            binary: jira-macOS-arm64
+            archive: tar.gz
+          - os: macos-13
+            goos: darwin
+            goarch: amd64
+            binary: jira-macOS-x86_64
+            archive: tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+
+    - name: Build binary
+      run: |
+        LDFLAGS="-s -w"
+        LDFLAGS="$LDFLAGS -X github.com/jorres/jira-tui/internal/version.GitCommit=${{ github.sha }}"
+        LDFLAGS="$LDFLAGS -X github.com/jorres/jira-tui/internal/version.SourceDateEpoch=$(git log -1 --format=%ct)"
+        LDFLAGS="$LDFLAGS -X github.com/jorres/jira-tui/internal/version.Version=${{ github.ref_name }}"
+        go build -ldflags="$LDFLAGS" -o ${{ matrix.binary }}${{ matrix.goos == 'windows' && '.exe' || '' }} ./cmd/jira/main.go
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        GOARM: ${{ matrix.goarm }}
+      shell: bash
+
+    - name: Create archive (Linux/macOS)
+      if: matrix.archive == 'tar.gz'
+      run: tar -czf ${{ matrix.binary }}.tar.gz ${{ matrix.binary }}
+      shell: bash
+
+    - name: Create archive (Windows)
+      if: matrix.archive == 'zip'
+      run: Compress-Archive -Path ${{ matrix.binary }}.exe -DestinationPath ${{ matrix.binary }}.zip
+      shell: pwsh
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.binary }}
+        path: ${{ matrix.archive == 'tar.gz' && format('{0}.tar.gz', matrix.binary) || matrix.archive == 'zip' && format('{0}.zip', matrix.binary) || matrix.binary }}
+
+  release:
+    needs: build
     runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
       with:
-        fetch-depth: 0
+        path: artifacts
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
       with:
-        go-version: '1.24'
-
-    - name: Build for Linux
-      run: |
-        go build -ldflags="-s -w -X github.com/jorres/jira-tui/internal/version.GitCommit=${{ github.sha }} -X github.com/jorres/jira-tui/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X github.com/jorres/jira-tui/internal/version.Version=${{ github.ref_name }}" -o jira-linux-amd64 ./cmd/jira/main.go
-
-    - name: Upload Linux artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: jira-linux-amd64
-        path: jira-linux-amd64
-
-  build-windows:
-    runs-on: windows-latest
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.24'
-
-    - name: Build for Windows
-      run: |
-        go build -ldflags="-s -w -X github.com/jorres/jira-tui/internal/version.GitCommit=${{ github.sha }} -X github.com/jorres/jira-tui/internal/version.BuildTime=$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ' -AsUTC) -X github.com/jorres/jira-tui/internal/version.Version=${{ github.ref_name }}" -o jira-windows-amd64.exe ./cmd/jira/main.go
+        files: |
+          artifacts/jira-linux-x86_64/jira-linux-x86_64.tar.gz
+          artifacts/jira-linux-arm64/jira-linux-arm64.tar.gz
+          artifacts/jira-linux-armv6/jira-linux-armv6.tar.gz
+          artifacts/jira-linux-i386/jira-linux-i386.tar.gz
+          artifacts/jira-windows-x86_64/jira-windows-x86_64.zip
+          artifacts/jira-macOS-arm64/jira-macOS-arm64.tar.gz
+          artifacts/jira-macOS-x86_64/jira-macOS-x86_64.tar.gz
+        body: |
+          ## Release ${{ github.ref_name }}
+          
+          Download the appropriate binary for your platform and extract (if needed).
+          
+          ### Installation
+          ```bash
+          # Linux/macOS
+          tar -xzf jira-*.tar.gz
+          chmod +x jira-*
+          mv jira-* /usr/local/bin/jira
+          
+          # Windows
+          # Extract and run the .exe file
+          unzip jira-windows-x86_64.zip
+          .\jira-windows-x86_64.exe
+          ```
+        draft: false
+        prerelease: false
       env:
-        GOOS: windows
-        GOARCH: amd64
-
-    - name: Upload Windows artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: jira-windows-amd64
-        path: jira-windows-amd64.exe
-
-  build-macos:
-    runs-on: macos-latest
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.24'
-
-    - name: Build for macOS ARM64
-      run: |
-        go build -ldflags="-s -w -X github.com/jorres/jira-tui/internal/version.GitCommit=${{ github.sha }} -X github.com/jorres/jira-tui/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X github.com/jorres/jira-tui/internal/version.Version=${{ github.ref_name }}" -o jira-darwin-arm64 ./cmd/jira/main.go
-      env:
-        GOOS: darwin
-        GOARCH: arm64
-
-    - name: Upload macOS artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: jira-darwin-arm64
-        path: jira-darwin-arm64
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
