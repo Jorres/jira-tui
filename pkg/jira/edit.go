@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"github.com/jorres/md2adf-translator/md2adf"
+	"log"
 	"net/http"
 	"slices"
 	"strconv"
@@ -551,7 +551,7 @@ func splitAddAndRemove(input []string) ([]string, []string) {
 // EditMetadata returns the metadata about fields visible to the user on issue editing screen
 // using GET /issue/{issueId}/editmeta handler.
 func (c *Client) GetEditMetadata(key string) (*EditMetadata, error) {
-	res, err := c.Get(context.Background(), "/issue/"+key+"/editmeta", nil)
+	res, err := c.GetV2(context.Background(), "/issue/"+key+"/editmeta", nil)
 	if err != nil {
 		return nil, err
 	}

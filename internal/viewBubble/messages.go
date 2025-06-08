@@ -1,8 +1,8 @@
 package viewBubble
 
 import (
-	"github.com/jorres/jira-tui/pkg/jira"
 	"github.com/charmbracelet/bubbles/v2/list"
+	"github.com/jorres/jira-tui/pkg/jira"
 )
 
 type StatusClearMsg struct{}
@@ -21,8 +21,9 @@ type CurrentIssueReceivedMsg struct {
 }
 
 type IssueEditedMsg struct {
-	err    error
-	stderr string
+	issueKey string
+	err      error
+	stderr   string
 }
 
 type IssueCreatedMsg struct {
@@ -31,21 +32,18 @@ type IssueCreatedMsg struct {
 }
 
 type IssueMovedMsg struct {
-	err    error
-	stderr string
+	issueKey string
+	err      error
+	stderr   string
 }
 
 type IssueAssignedToEpicMsg struct {
-	err    error
-	stderr string
+	issueKey string
+	err      error
+	stderr   string
 }
 
 type SelectedIssueMsg struct{ issue *jira.Issue }
-
-type IssueCachedMsg struct {
-	key   string
-	issue *jira.Issue
-}
 
 type FuzzySelectorResultMsg struct {
 	item         list.Item

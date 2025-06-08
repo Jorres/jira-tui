@@ -5,14 +5,17 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/jorres/jira-tui/api"
-	"github.com/jorres/jira-tui/pkg/jira"
-	"github.com/jorres/jira-tui/pkg/jira/filter/issue"
 	"github.com/charmbracelet/bubbles/v2/spinner"
 	"github.com/charmbracelet/bubbles/v2/table"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/jorres/jira-tui/api"
+	"github.com/jorres/jira-tui/internal/debug"
+	"github.com/jorres/jira-tui/pkg/jira"
+	"github.com/jorres/jira-tui/pkg/jira/filter/issue"
 )
+
+var _ = debug.Debug
 
 const (
 	SorterInactive int = iota
@@ -193,6 +196,13 @@ func (t *Table) Update(msg tea.Msg) (*Table, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case *jira.Issue:
+		for i, iss := range t.allIssues {
+			if iss.Key == msg.Key {
+				t.allIssues[i] = msg
+			}
+		}
+		t.setInnerTableColumnsRows()
 	case WidgetSizeMsg:
 		t.rawWidth = msg.Width
 		t.rawHeight = msg.Height
@@ -281,38 +291,12 @@ func (t *Table) SetDataProvider(provider DataProvider) {
 	t.dataProvider = provider
 }
 
-// View renders the table.
-func (t *Table) View() string {
-	// Show spinner if no issues loaded yet
-	if t.allIssues == nil {
-		spinnerStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color(getAccentColor())).
-			Align(lipgloss.Center).
-			Width(t.viewportWidth).
-			Height(t.viewportHeight)
-
-		spinnerContent := fmt.Sprintf("%s Loading issues...", t.spinner.View())
-		return t.baseStyle.Render(spinnerStyle.Render(spinnerContent))
-	}
-
-	var s strings.Builder
-	var viewComponents []string
-
-	if t.SorterState == SorterFiltering {
-		headerContent := t.sorterStyle.Width(t.viewportWidth).Render("/" + t.sorterText)
-		viewComponents = append(viewComponents, headerContent)
-	}
-
+func (t *Table) setInnerTableColumnsRows() {
 	var data TableData
 	if t.SorterState == SorterInactive {
 		data = t.makeTableData(t.allIssues)
 	} else {
 		data = t.makeTableData(t.filteredIssues)
-	}
-
-	if len(data) == 0 || len(data[0]) == 0 {
-		// Return empty view if no data
-		return ""
 	}
 
 	columns := make([]table.Column, len(data[0]))
@@ -335,6 +319,44 @@ func (t *Table) View() string {
 
 	t.table.SetColumns(columns)
 	t.table.SetRows(rows)
+}
+
+// View renders the table.
+func (t *Table) View() string {
+	// Show spinner if no issues loaded yet
+	if t.allIssues == nil {
+		spinnerStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color(getAccentColor())).
+			Align(lipgloss.Center).
+			Width(t.viewportWidth).
+			Height(t.viewportHeight)
+
+		spinnerContent := fmt.Sprintf("%s Loading issues...", t.spinner.View())
+		return t.baseStyle.Render(spinnerStyle.Render(spinnerContent))
+	}
+
+	if len(t.allIssues) == 0 {
+		// Show centered "No issues found" message when issue list is empty
+		emptyStyle := lipgloss.NewStyle().
+			Align(lipgloss.Center).
+			AlignVertical(lipgloss.Center).
+			Width(t.viewportWidth).
+			Height(t.viewportHeight)
+
+		emptyContent := emptyStyle.Render("No issues found")
+		return t.baseStyle.Render(emptyContent)
+	}
+
+	var s strings.Builder
+	var viewComponents []string
+
+	if t.SorterState == SorterFiltering {
+		headerContent := t.sorterStyle.Width(t.viewportWidth).Render("/" + t.sorterText)
+		viewComponents = append(viewComponents, headerContent)
+	}
+
+	t.setInnerTableColumnsRows()
+
 	t.table.SetHeight(t.viewportHeight)
 	t.table.SetWidth(t.viewportWidth)
 
@@ -482,12 +504,8 @@ func (t *Table) getKeyUnderCursorWithShift(shift int) string {
 	return issuePool[pos].Key
 }
 
-func (t *Table) GetIssueSync(shift int) *jira.Issue {
+func (t *Table) GetIssueSyncNoCache(shift int) *jira.Issue {
 	key := t.getKeyUnderCursorWithShift(shift)
-
-	if iss, ok := t.issueCache[key]; ok {
-		return iss
-	}
 
 	iss, err := api.ProxyGetIssue(api.DefaultClient(false), key, issue.NewNumCommentsFilter(10))
 	if err != nil {
@@ -495,6 +513,24 @@ func (t *Table) GetIssueSync(shift int) *jira.Issue {
 	}
 
 	t.issueCache[key] = iss
+	return iss
+}
+
+func (t *Table) GetIssueSync(shift int) *jira.Issue {
+	key := t.getKeyUnderCursorWithShift(shift)
+
+	if iss, ok := t.issueCache[key]; ok {
+		return iss
+	}
+
+	return t.GetIssueSyncNoCache(shift)
+}
+
+func (t *Table) GetIssueSyncAndForget(shift int) *jira.Issue {
+	iss := t.GetIssueSync(shift)
+
+	delete(t.issueCache, iss.Key)
+
 	return iss
 }
 

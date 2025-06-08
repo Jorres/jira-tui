@@ -190,8 +190,9 @@ func (c *Client) assignIssue(key, assignee, ver string) error {
 // GetAssignableToIssue fetches users assignable to issue
 func (c *Client) GetAssignableToIssue(issueKey string) ([]*User, error) {
 	path := "/user/assignable/search"
+
 	path = fmt.Sprintf("%s?issueKey=%s&startAt=0&maxResults=1000", path, issueKey)
-	res, err := c.Get(context.Background(), path, nil)
+	res, err := c.GetV2(context.Background(), path, nil)
 
 	if err != nil {
 		return nil, err

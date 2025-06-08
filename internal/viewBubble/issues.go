@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/jorres/jira-tui/api"
 	"github.com/jorres/jira-tui/internal/cmdutil"
 	"github.com/jorres/jira-tui/internal/debug"
 	"github.com/jorres/jira-tui/pkg/jira"
-	"github.com/atotto/clipboard"
 	"github.com/spf13/viper"
 
 	"github.com/charmbracelet/bubbles/v2/list"
@@ -112,13 +112,13 @@ func RunMainUI(
 		table := NewTable(
 			WithTableHelpText(splitViewHelpText),
 		)
-		
+
 		// Use default columns if not specified in tab config
 		columnsToUse := tabConfig.Columns
 		if len(columnsToUse) == 0 {
 			columnsToUse = getDefaultIssueColumns()
 		}
-		
+
 		table.SetColumns(columnsToUse)
 		table.SetTimezone(timezone)
 
@@ -161,12 +161,6 @@ func (l *IssueList) setStatusMessage(message string) tea.Cmd {
 // Init initializes the IssueList model.
 func (l *IssueList) Init() tea.Cmd {
 	return nil
-}
-
-func (l *IssueList) forceRedrawCmd() tea.Cmd {
-	return func() tea.Msg {
-		return SelectedIssueMsg{issue: l.getCurrentTable().GetIssueSync(0)}
-	}
 }
 
 // getCurrentTable returns the table for the active tab
@@ -219,7 +213,7 @@ func (l *IssueList) editIssue(issue *jira.Issue) tea.Cmd {
 	)
 
 	return execCommandWithStderr(args, func(err error, stderr string) tea.Msg {
-		return IssueEditedMsg{err: err, stderr: stderr}
+		return IssueEditedMsg{issueKey: issue.Key, err: err, stderr: stderr}
 	})
 }
 
@@ -264,7 +258,7 @@ func (l *IssueList) addComment(iss *jira.Issue) tea.Cmd {
 	)
 
 	return execCommandWithStderr(args, func(err error, stderr string) tea.Msg {
-		return IssueEditedMsg{err: err, stderr: stderr}
+		return IssueEditedMsg{issueKey: iss.Key, err: err, stderr: stderr}
 	})
 }
 
@@ -286,7 +280,7 @@ func (l *IssueList) moveIssue(issue *jira.Issue) tea.Cmd {
 	)
 
 	return execCommandWithStderr(args, func(err error, stderr string) tea.Msg {
-		return IssueMovedMsg{err: err, stderr: stderr}
+		return IssueMovedMsg{issueKey: issue.Key, err: err, stderr: stderr}
 	})
 }
 
@@ -325,12 +319,11 @@ func (l *IssueList) assignToEpic(epicKey string, issue *jira.Issue) tea.Cmd {
 	})
 }
 
-func (l *IssueList) assignToUser(user *jira.User, issue *jira.Issue) tea.Cmd {
-	err := l.c.AssignIssue(issue.Key, user.AccountID)
+func (l *IssueList) assignToUser(user *jira.User, issue *jira.Issue) {
+	err := l.c.AssignIssueV2(issue.Key, user.Name)
 	if err != nil {
 		cmdutil.ExitIfError(err)
 	}
-	return l.forceRedrawCmd()
 }
 
 func (l *IssueList) updateCurrentIssue(msg tea.Msg) tea.Cmd {
@@ -339,15 +332,15 @@ func (l *IssueList) updateCurrentIssue(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
-func (l *IssueList) SafelyGetAssignableUsers(issueKey string) []*jira.User {
+func (l *IssueList) SafelyGetAssignableUsers(issueKey string) ([]*jira.User, error) {
+	var err error
 	if l.cachedAllUsers == nil {
-		var err error
 		l.cachedAllUsers, err = l.c.GetAssignableToIssue(issueKey)
 		if err != nil {
-			cmdutil.ExitIfError(err)
+			return nil, err
 		}
 	}
-	return l.cachedAllUsers
+	return l.cachedAllUsers, nil
 }
 
 func (l *IssueList) bulkSendMsgToAllTablesAndIssues(tableMsg, issueMsg tea.Msg) []tea.Cmd {
@@ -398,9 +391,6 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, tableSpinner, issueSpinner)
 
 		return l, tea.Batch(cmds...)
-	case SelectedIssueMsg:
-		cmd := l.updateCurrentIssue(msg.issue)
-		return l, cmd
 	case spinner.TickMsg:
 		var cmd1, cmd2 tea.Cmd
 		l.tables[l.activeTab], cmd1 = l.tables[l.activeTab].Update(msg)
@@ -408,8 +398,9 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return l, tea.Batch(cmd1, cmd2)
 	case IncomingIssueMsg:
 		m, _ := l.issueDetailViews[msg.index].Update(msg.issue)
+		l.tables[msg.index], cmd = l.tables[msg.index].Update(msg.issue)
 		l.issueDetailViews[msg.index] = m
-		return l, nil
+		return l, cmd
 	case IncomingIssueListMsg:
 		var cmd tea.Cmd
 		thisTable := l.tables[msg.index]
@@ -420,13 +411,25 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return l, cmd
 	// Can't combine the next 4 into one switch clause due to Go's type system
 	case IssueEditedMsg:
-		return l.processError(msg.err, msg.stderr), cmd
+		if msg.err != nil {
+			return l.processError(msg.err, msg.stderr), cmd
+		}
+		return l.refreshCurrentLine()
 	case IssueMovedMsg:
-		return l.processError(msg.err, msg.stderr), cmd
+		if msg.err != nil {
+			return l.processError(msg.err, msg.stderr), cmd
+		}
+		return l.refreshCurrentLine()
 	case IssueAssignedToEpicMsg:
-		return l.processError(msg.err, msg.stderr), cmd
+		if msg.err != nil {
+			return l.processError(msg.err, msg.stderr), cmd
+		}
+		return l.refreshCurrentLine()
 	case IssueCreatedMsg:
-		return l.processError(msg.err, msg.stderr), cmd
+		if msg.err != nil {
+			return l.processError(msg.err, msg.stderr), cmd
+		}
+		return l.refreshCurrentLine()
 	case StatusClearMsg:
 		l.statusMessage = ""
 		if l.statusTimer != nil {
@@ -438,10 +441,11 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.selectorType {
 		case FuzzySelectorEpic:
 			epic := msg.item.(*jira.Issue)
-			return l, l.assignToEpic(epic.Key, l.getCurrentTable().GetIssueSync(0))
+			return l, l.assignToEpic(epic.Key, l.getCurrentTable().GetIssueSyncAndForget(0))
 		case FuzzySelectorUser:
 			user := msg.item.(*jira.User)
-			return l, l.assignToUser(user, l.getCurrentTable().GetIssueSync(0))
+			l.assignToUser(user, l.getCurrentTable().GetIssueSyncAndForget(0))
+			return l.refreshCurrentLine()
 		}
 	case CurrentIssueReceivedMsg:
 		currentTable := l.getCurrentTable()
@@ -497,7 +501,11 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return l, tea.Batch(cmd1, cmd2)
 		case "a":
 			iss := l.getCurrentTable().GetIssueSync(0)
-			users := l.SafelyGetAssignableUsers(iss.Key)
+			users, err := l.SafelyGetAssignableUsers(iss.Key)
+
+			if err != nil {
+				return l.processError(err, ""), cmd
+			}
 
 			listItems := []list.Item{}
 			for _, user := range users {
@@ -516,9 +524,9 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			fz := NewFuzzySelectorFrom(l, l.rawWidth, l.rawHeight, listItems, FuzzySelectorEpic)
 			return fz, nil
 		case "m":
-			return l, l.moveIssue(l.getCurrentTable().GetIssueSync(0))
+			return l, l.moveIssue(l.getCurrentTable().GetIssueSyncAndForget(0))
 		case "e":
-			return l, l.editIssue(l.getCurrentTable().GetIssueSync(0))
+			return l, l.editIssue(l.getCurrentTable().GetIssueSyncAndForget(0))
 		case "u":
 			key := l.getCurrentTable().getKeyUnderCursorWithShift(0)
 			url := fmt.Sprintf("%s/browse/%s", l.Server, key)
@@ -533,11 +541,7 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "c":
 			return l, l.addComment(l.getCurrentTable().GetIssueSync(0))
 		case "ctrl+r":
-			currentTable := l.getCurrentTable()
-			cmd1 := l.updateCurrentIssue(currentTable.GetIssueSync(0))
-			var cmd2 tea.Cmd
-			l.tables[l.activeTab], cmd2 = currentTable.Update(msg)
-			return l, tea.Batch(cmd1, cmd2)
+			return l.refreshCurrentLine()
 		case "?":
 			helpView := NewHelpView(l, l.rawWidth, l.rawHeight)
 			return helpView, nil
@@ -549,11 +553,21 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Forwarding straight to table:
 		case "/":
 			l.tables[l.activeTab], cmd = l.getCurrentTable().Update(msg)
-			return l, l.forceRedrawCmd()
 		}
 	}
 
 	return l, cmd
+}
+
+func (l *IssueList) refreshCurrentLine() (tea.Model, tea.Cmd) {
+	currentTable := l.getCurrentTable()
+	refreshedIss := currentTable.GetIssueSyncNoCache(0)
+	cmd1 := l.updateCurrentIssue(refreshedIss)
+
+	var cmd2 tea.Cmd
+	l.tables[l.activeTab], cmd2 = currentTable.Update(refreshedIss)
+
+	return l, tea.Batch(cmd1, cmd2)
 }
 
 func (l *IssueList) FetchAndRefreshCache() {

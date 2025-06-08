@@ -345,7 +345,7 @@ func getAnswers(client *jira.Client, params *editParams, issue *jira.Issue) {
 			ans := struct{ Metadata []string }{}
 			editMetadata, err := client.GetEditMetadata(params.issueKey)
 			if err != nil {
-				cmdutil.ExitIfError(fmt.Errorf("Failed to get issue edit metadata: %w"))
+				cmdutil.ExitIfError(fmt.Errorf("Failed to get issue edit metadata: %w", err))
 			}
 
 			// Convert EditMetadata to []*Field format for compatibility

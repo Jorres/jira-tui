@@ -9,10 +9,13 @@ import (
 
 	"github.com/jorres/jira-tui/api"
 	"github.com/jorres/jira-tui/internal/cmdutil"
+	D "github.com/jorres/jira-tui/internal/debug"
 	"github.com/jorres/jira-tui/internal/query"
 	"github.com/jorres/jira-tui/internal/viewBubble"
 	"github.com/jorres/jira-tui/pkg/jira"
 )
+
+var _ = D.Debug
 
 const helpText = `UI opens up a comprehensive UI. Press ? for help right after ui opens.`
 

@@ -28,16 +28,7 @@ func ExitIfError(err error) {
 	var msg string
 
 	if e, ok := err.(*jira.ErrUnexpectedResponse); ok {
-		dm := fmt.Sprintf(
-			"\njira: Received unexpected response '%s'.\nPlease check the parameters you supplied and try again.",
-			e.Status,
-		)
-		bd := e.Error()
-
-		msg = dm
-		if len(bd) > 0 {
-			msg = fmt.Sprintf("%s%s", bd, dm)
-		}
+		msg = e.Error()
 	} else if e, ok := err.(*jira.ErrMultipleFailed); ok {
 		msg = fmt.Sprintf("\n%s%s", "SOME REQUESTS REPORTED ERROR:", e.Error())
 	} else {

@@ -51,7 +51,17 @@ type ErrUnexpectedResponse struct {
 }
 
 func (e *ErrUnexpectedResponse) Error() string {
-	return e.Body.String()
+	dm := fmt.Sprintf(
+		"\njira: Received unexpected response '%s'.\nPlease check the parameters you supplied and try again.",
+		e.Status,
+	)
+	bd := e.Body.String()
+
+	s := dm
+	if len(bd) > 0 {
+		s = fmt.Sprintf("%s%s", bd, dm)
+	}
+	return s
 }
 
 // ErrMultipleFailed represents a grouped error, usually when
