@@ -243,22 +243,23 @@ func edit(cmd *cobra.Command, args []string) {
 		s := cmdutil.Info("Updating an issue...")
 		defer s.Stop()
 
-		useV3API := false
-		err := checkV2Safe(params.body, params.comments, md2adfTranslator)
-		if err != nil {
-			if viper.GetString("installation") == jira.InstallationTypeLocal {
-				cmdutil.ExitIfError(fmt.Errorf(
-					"You are trying to edit an issue which contains Jira markdown elements, only supported in jira v3 api (your Jira only supports v2). "+
-						"Sending this content as is to Jira will CORRUPT the issue content for everybody else, thus it is forbidden. %w",
-					err,
-				))
+		useV3API := true
+		if viper.GetString("installation") == jira.InstallationTypeLocal {
+			err := checkV2Safe(params.body, params.comments, md2adfTranslator)
+
+			if err != nil {
+				if viper.GetString("installation") == jira.InstallationTypeLocal {
+					cmdutil.ExitIfError(fmt.Errorf(
+						"You are trying to edit an issue which contains Jira markdown elements, only supported in jira v3 api (your Jira only supports v2). "+
+							"Sending this content as is to Jira will CORRUPT the issue content for everybody else, thus it is forbidden. %w",
+						err,
+					))
+				}
+
+				// if there are no unsafe elements, we have to resort to V2 api...
+				useV3API = false
 			}
-
-			// it's okay, we are working with cloud jira installation, it supports v3
-			useV3API = true
 		}
-
-		debug.Debug("useV3API: ", useV3API)
 
 		// Now process body and comments based on the chosen API version
 		body, bodyIsRawADF := processBodyForAPI(params.body, useV3API, md2adfTranslator)
@@ -751,12 +752,6 @@ func resolveUserIDs(emails []string, client *jira.Client, project, issueKey stri
 	for _, email := range emails {
 		// Remove @ prefix for user search
 		cleanEmail := strings.TrimPrefix(email, "@")
-
-		debug.Debug("users", userMap)
-		// if err != nil {
-		// 	fmt.Fprintf(os.Stderr, "Error: Failed to search for user %s: %v\n", cleanEmail, err)
-		// 	continue
-		// }
 
 		if user, exists := userMap[cleanEmail]; exists {
 			// Use AccountID for cloud installations, Name for server

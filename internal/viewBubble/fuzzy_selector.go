@@ -82,14 +82,25 @@ func (m *FuzzySelector) calculateViewportDimensions() {
 }
 
 func NewFuzzySelectorFrom(prev tea.Model, width, height int, items []list.Item, fuzzySelectorType FuzzySelectorType) *FuzzySelector {
+	// Create a themed delegate with accent color
+	delegate := list.NewDefaultDelegate()
+
+	// Apply accent color theming to selected items
+	accentColor := lipgloss.Color(getAccentColor())
+
+	delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.Foreground(accentColor).BorderForeground(accentColor)
+	delegate.Styles.SelectedDesc = delegate.Styles.SelectedDesc.Foreground(accentColor).BorderForeground(accentColor)
+
 	fz := &FuzzySelector{
 		PreviousModel: prev,
 		RawWidth:      width,
 		RawHeight:     height,
 
-		list:         list.New(items, list.NewDefaultDelegate(), 0, 0),
+		list:         list.New(items, delegate, 0, 0),
 		selectorType: fuzzySelectorType,
 	}
+
+	fz.list.Styles.Title = fz.list.Styles.Title.Background(accentColor)
 
 	switch fuzzySelectorType {
 	case FuzzySelectorEpic:
