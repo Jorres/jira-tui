@@ -103,10 +103,7 @@ func edit(cmd *cobra.Command, args []string) {
 	}()
 	cmdutil.ExitIfError(err)
 
-	var (
-		isADF        bool
-		originalBody string
-	)
+	var originalBody string
 
 	var adf2mdTranslator *adf2md.Translator
 	// Create a user email resolver function
@@ -120,7 +117,6 @@ func edit(cmd *cobra.Command, args []string) {
 
 	if issue.Fields.Description != nil {
 		if adfBody, ok := issue.Fields.Description.(*adf.ADFNode); ok {
-			isADF = true
 			checkForUnsupportedNodeTypes(adf2mdTranslator, adfBody)
 			originalBody = adf2mdTranslator.Translate(adfBody)
 		} else {
@@ -167,6 +163,11 @@ func edit(cmd *cobra.Command, args []string) {
 
 	if !params.noInput {
 		getAnswers(client, params, issue)
+	}
+
+	md2adfTranslator, err := prepareMD2AdfTranslator(params.body, client, project, issue.Key, adf2mdTranslator)
+	if err != nil {
+		cmdutil.ExitIfError(err)
 	}
 
 	// Parse the edited content back into body and comments
@@ -242,44 +243,26 @@ func edit(cmd *cobra.Command, args []string) {
 		s := cmdutil.Info("Updating an issue...")
 		defer s.Stop()
 
-		body := params.body
-		bodyIsRawADF := false
-		if isADF && body != "" {
-			adfBody, convErr := convertMarkdownToADF(body, client, project, adf2mdTranslator)
-			if convErr != nil {
-				cmdutil.ExitIfError(fmt.Errorf("Failed to convert markdown to adf, this may be a translator bug; %w"))
-			} else {
-				body = adfBody
-				bodyIsRawADF = true
-			}
-		} else if isADF {
-			body = md.ToJiraMD(body)
-		}
-
-		// Convert comments to ADF format
-		var editComments []jira.EditComment
-		for _, comment := range params.comments {
-			commentBody := comment.body
-			commentBodyIsRawADF := false
-
-			if isADF && commentBody != "" {
-				adfBody, convErr := convertMarkdownToADF(commentBody, client, project, adf2mdTranslator)
-				if convErr != nil {
-					cmdutil.ExitIfError(fmt.Errorf("Failed to convert markdown to adf, this may be a translator bug; %w"))
-				} else {
-					commentBody = adfBody
-					commentBodyIsRawADF = true
-				}
-			} else if isADF {
-				commentBody = md.ToJiraMD(commentBody)
+		useV3API := false
+		err := checkV2Safe(params.body, params.comments, md2adfTranslator)
+		if err != nil {
+			if viper.GetString("installation") == jira.InstallationTypeLocal {
+				cmdutil.ExitIfError(fmt.Errorf(
+					"You are trying to edit an issue which contains Jira markdown elements, only supported in jira v3 api (your Jira only supports v2). "+
+						"Sending this content as is to Jira will CORRUPT the issue content for everybody else, thus it is forbidden. %w",
+					err,
+				))
 			}
 
-			editComments = append(editComments, jira.EditComment{
-				ID:           comment.id,
-				Body:         commentBody,
-				BodyIsRawADF: commentBodyIsRawADF,
-			})
+			// it's okay, we are working with cloud jira installation, it supports v3
+			useV3API = true
 		}
+
+		debug.Debug("useV3API: ", useV3API)
+
+		// Now process body and comments based on the chosen API version
+		body, bodyIsRawADF := processBodyForAPI(params.body, useV3API, md2adfTranslator)
+		editComments := processCommentsForAPI(params.comments, useV3API, md2adfTranslator)
 
 		parent := cmdutil.GetJiraIssueKey(project, params.parentIssueKey)
 		if parent == "" && issue.Fields.Parent != nil {
@@ -304,7 +287,13 @@ func edit(cmd *cobra.Command, args []string) {
 			cmdcommon.ValidateCustomFields(edr.CustomFields, configuredCustomFields)
 			edr.WithCustomFields(configuredCustomFields)
 		}
-		return client.Edit(params.issueKey, &edr)
+
+		// Choose API version based on content safety
+		if useV3API {
+			return client.Edit(params.issueKey, &edr)
+		} else {
+			return client.EditV2(params.issueKey, &edr)
+		}
 	}()
 	cmdutil.ExitIfError(err)
 
@@ -326,6 +315,20 @@ func defaultSurveyOptions() []survey.AskOpt {
 		survey.WithKeepFilter(true),
 		survey.WithPageSize(height - 10),
 	}
+}
+
+func checkV2Safe(body string, comments []editComment, translator *md2adf.Translator) error {
+	if err := translator.CheckSafeForV2(body); err != nil {
+		return fmt.Errorf("body is not suitable for translation: %w", err)
+	}
+
+	for _, comment := range comments {
+		if err := translator.CheckSafeForV2(comment.body); err != nil {
+			return fmt.Errorf("comment is not suitable for translation: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func getAnswers(client *jira.Client, params *editParams, issue *jira.Issue) {
@@ -732,63 +735,73 @@ func extractEmailsFromMarkdown(markdown string) []string {
 }
 
 // resolveUserIDs takes a list of @emails and returns a mapping of email -> userID
-func resolveUserIDs(emails []string, client *jira.Client, project string) (map[string]string, error) {
+func resolveUserIDs(emails []string, client *jira.Client, project, issueKey string) (map[string]string, error) {
 	userMapping := make(map[string]string)
+
+	users, err := client.GetAssignableToIssue(issueKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all issues for email matching: %w", err)
+	}
+
+	userMap := make(map[string]*jira.User)
+	for _, user := range users {
+		userMap[user.Email] = user
+	}
 
 	for _, email := range emails {
 		// Remove @ prefix for user search
 		cleanEmail := strings.TrimPrefix(email, "@")
 
-		users, err := api.ProxyUserSearch(client, &jira.UserSearchOptions{
-			Query:   cleanEmail,
-			Project: project,
-		})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: Failed to search for user %s: %v\n", cleanEmail, err)
-			continue
-		}
+		debug.Debug("users", userMap)
+		// if err != nil {
+		// 	fmt.Fprintf(os.Stderr, "Error: Failed to search for user %s: %v\n", cleanEmail, err)
+		// 	continue
+		// }
 
-		if len(users) > 0 {
+		if user, exists := userMap[cleanEmail]; exists {
 			// Use AccountID for cloud installations, Name for server
 			it := viper.GetString("installation")
 			var userID string
 			if it == jira.InstallationTypeLocal {
-				userID = users[0].Name
+				userID = user.Name
 			} else {
-				userID = users[0].AccountID
+				userID = user.AccountID
 			}
 			userMapping[email] = userID
 			fmt.Fprintf(os.Stderr, "Info: Resolved %s to user ID %s\n", email, userID)
 		} else {
-			fmt.Fprintf(os.Stderr, "Warning: No user found for email %s\n", cleanEmail)
+			fmt.Fprintf(os.Stderr, "Error: failed to create mention from email, user not found: %s\n", cleanEmail)
 		}
 	}
 
 	return userMapping, nil
 }
 
-// convertMarkdownToADF converts markdown to ADF JSON string if mentions are found
-func convertMarkdownToADF(body string, client *jira.Client, project string, reverseTranslator *adf2md.Translator) (string, error) {
+func prepareMD2AdfTranslator(body string, client *jira.Client, project, issueKey string, reverseTranslator *adf2md.Translator) (*md2adf.Translator, error) {
 	var userMapping map[string]string
 
 	emails := extractEmailsFromMarkdown(body)
 	if len(emails) != 0 {
 		var err error
-		userMapping, err = resolveUserIDs(emails, client, project)
+		userMapping, err = resolveUserIDs(emails, client, project, issueKey)
 		if err != nil {
-			return "", fmt.Errorf("failed to resolve user IDs: %w", err)
+			return nil, fmt.Errorf("failed to resolve user IDs: %w", err)
 		}
 		// If no users were resolved, fall back to standard conversion
 		if len(userMapping) == 0 {
-			return "", fmt.Errorf("no users resolved from mentions")
+			return nil, fmt.Errorf("no users resolved from mentions")
 		}
 	}
 
 	// Convert markdown to ADF using the translator
-	translator := md2adf.NewTranslator(
+	return md2adf.NewTranslator(
 		md2adf.WithUserEmailMapping(userMapping),
 		md2adf.WithAdf2MdTranslator(reverseTranslator),
-	)
+	), nil
+}
+
+// convertMarkdownToADF converts markdown to ADF JSON string if mentions are found
+func convertMarkdownToADF(body string, translator *md2adf.Translator) (string, error) {
 	adfDoc, err := translator.TranslateToADF([]byte(body))
 	if err != nil {
 		return "", err
@@ -824,6 +837,65 @@ func resolveUserIDToEmail(userID string, client *jira.Client, project string) st
 	}
 
 	return ""
+}
+
+// checkV2SafeFallback is a temporary fallback until CheckV2Safe is implemented in md2adf
+func checkV2SafeFallback(body string) error {
+	// Simple heuristic: if content contains advanced markdown features, it might not be v2-safe
+	// This is a placeholder - replace with actual CheckV2Safe implementation
+	unsafePatterns := []string{
+		"@[",   // mentions
+		"<ac:", // Confluence macros
+		"```",  // code blocks (might have issues in v2)
+	}
+
+	for _, pattern := range unsafePatterns {
+		if strings.Contains(body, pattern) {
+			return fmt.Errorf("content contains v3-only features")
+		}
+	}
+	return nil
+}
+
+// processBodyForAPI processes the body based on the chosen API version
+func processBodyForAPI(body string, useV3API bool, translator *md2adf.Translator) (string, bool) {
+	bodyIsRawADF := false
+
+	if body == "" {
+		return "", false
+	}
+
+	if useV3API {
+		// Use ADF for v3 API
+		adfBody, convErr := convertMarkdownToADF(body, translator)
+		if convErr != nil {
+			cmdutil.ExitIfError(fmt.Errorf("Failed to convert markdown to adf, this may be a translator bug; %w", convErr))
+		} else {
+			body = adfBody
+			bodyIsRawADF = true
+		}
+	} else {
+		// Use simple markdown for v2 API
+		body = md.ToJiraMD(body)
+	}
+
+	return body, bodyIsRawADF
+}
+
+// processCommentsForAPI processes comments based on the chosen API version
+func processCommentsForAPI(comments []editComment, useV3API bool, translator *md2adf.Translator) []jira.EditComment {
+	var editComments []jira.EditComment
+
+	for _, comment := range comments {
+		body, isRaw := processBodyForAPI(comment.body, useV3API, translator)
+
+		editComments = append(editComments, jira.EditComment{
+			ID:           comment.id,
+			Body:         body,
+			BodyIsRawADF: isRaw,
+		})
+	}
+	return editComments
 }
 
 func setFlags(cmd *cobra.Command) {

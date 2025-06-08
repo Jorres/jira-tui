@@ -59,7 +59,7 @@ func (er *EditRequest) WithCustomFields(cf []IssueTypeField) {
 	er.configuredCustomFields = cf
 }
 
-// Edit updates an issue using POST /issue endpoint.
+// Edit updates an issue using PUT /issue endpoint (v3 API).
 func (c *Client) Edit(key string, req *EditRequest) error {
 	data := getRequestDataForEdit(req)
 	if data == nil {
@@ -70,8 +70,6 @@ func (c *Client) Edit(key string, req *EditRequest) error {
 	if err != nil {
 		return err
 	}
-
-	// debug.Fatal(string(body))
 
 	res, err := c.Put(context.Background(), "/issue/"+key, body, Header{
 		"Accept":       "application/json",
@@ -100,39 +98,57 @@ func (c *Client) Edit(key string, req *EditRequest) error {
 	return nil
 }
 
+// EditV2 updates an issue using PUT /issue endpoint (v2 API).
+func (c *Client) EditV2(key string, req *EditRequest) error {
+	data := getRequestDataForEdit(req)
+	if data == nil {
+		return fmt.Errorf("jira: invalid request - failed to parse ADF JSON")
+	}
+
+	body, err := json.Marshal(&data)
+	if err != nil {
+		return err
+	}
+
+	res, err := c.PutV2(context.Background(), "/issue/"+key, body, Header{
+		"Accept":       "application/json",
+		"Content-Type": "application/json",
+	})
+	if err != nil {
+		return err
+	}
+	if res == nil {
+		return ErrEmptyResponse
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	if res.StatusCode != http.StatusNoContent {
+		return formatUnexpectedResponse(res)
+	}
+
+	// Update comments separately
+	for _, comment := range req.Comments {
+		err := c.updateCommentV2(key, comment)
+		if err != nil {
+			return fmt.Errorf("failed to update comment %s: %w", comment.ID, err)
+		}
+	}
+
+	return nil
+}
+
 // updateComment updates a single comment using PUT /issue/{key}/comment/{commentId} endpoint.
 func (c *Client) updateComment(issueKey string, comment EditComment) error {
 	path := fmt.Sprintf("/issue/%s/comment/%s", issueKey, comment.ID)
 
-	var requestBody interface{}
-	if comment.BodyIsRawADF {
-		// Parse the ADF JSON string into a map for direct embedding
-		var adfMap interface{}
-		if err := json.Unmarshal([]byte(comment.Body), &adfMap); err != nil {
-			return fmt.Errorf("failed to parse ADF JSON: %w", err)
-		}
-		requestBody = map[string]interface{}{
-			"body": adfMap,
-		}
-	} else {
-		// For plain text, create simple ADF structure
-		requestBody = map[string]interface{}{
-			"body": map[string]interface{}{
-				"type":    "doc",
-				"version": 1,
-				"content": []interface{}{
-					map[string]interface{}{
-						"type": "paragraph",
-						"content": []interface{}{
-							map[string]interface{}{
-								"type": "text",
-								"text": comment.Body,
-							},
-						},
-					},
-				},
-			},
-		}
+	var requestBody any
+	// Parse the ADF JSON string into a map for direct embedding
+	var adfMap any
+	if err := json.Unmarshal([]byte(comment.Body), &adfMap); err != nil {
+		return fmt.Errorf("failed to parse ADF JSON: %w", err)
+	}
+	requestBody = map[string]any{
+		"body": adfMap,
 	}
 
 	body, err := json.Marshal(requestBody)
@@ -141,6 +157,38 @@ func (c *Client) updateComment(issueKey string, comment EditComment) error {
 	}
 
 	res, err := c.Put(context.Background(), path, body, Header{
+		"Accept":       "application/json",
+		"Content-Type": "application/json",
+	})
+	if err != nil {
+		return err
+	}
+	if res == nil {
+		return ErrEmptyResponse
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	if res.StatusCode != http.StatusOK {
+		return formatUnexpectedResponse(res)
+	}
+
+	return nil
+}
+
+// updateCommentV2 updates a single comment using PUT /issue/{key}/comment/{commentId} endpoint (v2 API).
+func (c *Client) updateCommentV2(issueKey string, comment EditComment) error {
+	path := fmt.Sprintf("/issue/%s/comment/%s", issueKey, comment.ID)
+
+	requestBody := map[string]any{
+		"body": comment.Body,
+	}
+
+	body, err := json.Marshal(requestBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal comment request: %w", err)
+	}
+
+	res, err := c.PutV2(context.Background(), path, body, Header{
 		"Accept":       "application/json",
 		"Content-Type": "application/json",
 	})
@@ -572,7 +620,7 @@ func (c *Client) GetEditMetadata(key string) (*EditMetadata, error) {
 func (c *Client) GetEditMetadataWithFields(key string, fieldIds []string) (*EditMetadata, error) {
 	queryParams := "?expand=editmeta&fields=" + strings.Join(fieldIds, ",")
 
-	res, err := c.Get(context.Background(), "/issue/"+key+queryParams, nil)
+	res, err := c.GetV2(context.Background(), "/issue/"+key+queryParams, nil)
 	if err != nil {
 		return nil, err
 	}

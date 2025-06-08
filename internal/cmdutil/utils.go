@@ -36,7 +36,7 @@ func ExitIfError(err error) {
 		case jira.ErrEmptyResponse:
 			msg = "jira: Received empty response.\nPlease try again."
 		default:
-			msg = fmt.Sprintf("Error: %s", err.Error())
+			msg = fmt.Sprintf("\nError: %s", err.Error())
 		}
 	}
 

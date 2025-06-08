@@ -69,7 +69,7 @@ func (m ErrorModel) View() string {
 
 	if m.stderrOutput != "" {
 		content.WriteString("Command output:\n")
-		content.WriteString(wrapText(m.stderrOutput, contentWidth))
+		content.WriteString(wrapText(m.stderrOutput, contentWidth-4)) // -4? I forgot why it is here
 	}
 
 	content.WriteString("\n\nPress Enter, Esc, or 'q' to close")

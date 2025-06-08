@@ -9,8 +9,9 @@ import (
 func Debug(v ...any) {
 	f, _ := os.OpenFile("/home/jorres/hobbies/jira-coalition/jira-tui/debug.log", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
 	for _, val := range v {
-		fmt.Fprintln(f, val)
+		fmt.Fprint(f, val, " ")
 	}
+	fmt.Fprintln(f)
 	f.Close()
 }
 
