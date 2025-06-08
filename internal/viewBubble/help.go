@@ -83,7 +83,7 @@ func (h *HelpView) scrollDown() {
 		maxScroll = 0
 	}
 
-	scrollSize := viper.GetInt("bubble.issue.scroll_size")
+	scrollSize := viper.GetInt("ui.issue.scroll_size")
 	if scrollSize <= 0 {
 		scrollSize = 1 // fallback to 1 if not configured or invalid
 	}
@@ -102,7 +102,7 @@ func (h *HelpView) scrollDown() {
 
 // scrollUp scrolls the content up by configured scroll size
 func (h *HelpView) scrollUp() {
-	scrollSize := viper.GetInt("bubble.issue.scroll_size")
+	scrollSize := viper.GetInt("ui.issue.scroll_size")
 	if scrollSize <= 0 {
 		scrollSize = 1 // fallback to 1 if not configured or invalid
 	}

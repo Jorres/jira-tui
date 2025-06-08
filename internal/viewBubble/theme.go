@@ -13,7 +13,7 @@ var (
 
 // getAccentColor returns the configured accent color or default fallback
 func getAccentColor() string {
-	color := viper.GetString("bubble.theme.accent")
+	color := viper.GetString("ui.theme.accent")
 	if color != "" {
 		return color
 	}
@@ -26,7 +26,7 @@ func getAccentColor() string {
 }
 
 func getPaleColor() string {
-	color := viper.GetString("bubble.theme.pale")
+	color := viper.GetString("ui.theme.pale")
 	if color != "" {
 		return color
 	}

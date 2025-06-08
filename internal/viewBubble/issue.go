@@ -573,7 +573,7 @@ func (iss *IssueModel) scrollDown() {
 		maxScroll = 0
 	}
 
-	scrollSize := viper.GetInt("bubble.issue.scroll_size")
+	scrollSize := viper.GetInt("ui.issue.scroll_size")
 	if scrollSize <= 0 {
 		scrollSize = 1 // fallback to 1 if not configured or invalid
 	}
@@ -592,7 +592,7 @@ func (iss *IssueModel) scrollDown() {
 
 // scrollUp scrolls the content up by configured scroll size
 func (iss *IssueModel) scrollUp() {
-	scrollSize := viper.GetInt("bubble.issue.scroll_size")
+	scrollSize := viper.GetInt("ui.issue.scroll_size")
 	if scrollSize <= 0 {
 		scrollSize = 1 // fallback to 1 if not configured or invalid
 	}
@@ -613,7 +613,7 @@ func (iss *IssueModel) prepareRenderedLines() {
 	if renderWidth < 40 { // minimum width for readability
 		renderWidth = 40
 	}
-	
+
 	r, err := MDRendererWithWidth(getCurrentTheme(), renderWidth)
 	if err != nil {
 		cmdutil.ExitIfError(fmt.Errorf("Failed to create an MDRenderer: %w", err))

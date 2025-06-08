@@ -42,7 +42,7 @@ func ui(cmd *cobra.Command, args []string) {
 
 	// Read tab configuration from viper
 	var tabConfigs []ListTabConfig
-	err = viper.UnmarshalKey("bubble.list.tabs", &tabConfigs)
+	err = viper.UnmarshalKey("ui.list.tabs", &tabConfigs)
 	if err != nil {
 		cmdutil.ExitIfError(err)
 	}
