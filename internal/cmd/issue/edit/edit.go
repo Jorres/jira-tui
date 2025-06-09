@@ -16,12 +16,12 @@ import (
 	"github.com/jorres/md2adf-translator/md2adf"
 
 	"github.com/jorres/jira-tui/api"
+	"github.com/jorres/jira-tui/internal/bubble"
 	"github.com/jorres/jira-tui/internal/cmdcommon"
 	"github.com/jorres/jira-tui/internal/cmdutil"
 	"github.com/jorres/jira-tui/internal/debug"
 	"github.com/jorres/jira-tui/internal/editing"
 	"github.com/jorres/jira-tui/internal/query"
-	"github.com/jorres/jira-tui/internal/viewBubble"
 	"github.com/jorres/jira-tui/pkg/jira"
 	"github.com/jorres/jira-tui/pkg/jira/filter/issue"
 	"github.com/jorres/jira-tui/pkg/md"
@@ -132,7 +132,7 @@ func edit(cmd *cobra.Command, args []string) {
 	if issue.Fields.Comment.Total > 0 {
 		for _, comment := range issue.Fields.Comment.Comments {
 
-			at := viewBubble.FormatDateTime(comment.Created, jira.RFC3339, "Local")
+			at := bubble.FormatDateTime(comment.Created, jira.RFC3339, "Local")
 			contentWithComments += fmt.Sprintf(
 				"\n\n# DO NOT EDIT THIS LINE - Comment by %s (at %s)\n\n",
 				comment.Author.GetDisplayableName(),

@@ -1,4 +1,4 @@
-package viewBubble
+package bubble
 
 import (
 	tea "github.com/charmbracelet/bubbletea/v2"

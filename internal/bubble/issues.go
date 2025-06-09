@@ -1,4 +1,4 @@
-package viewBubble
+package bubble
 
 import (
 	"bytes"
@@ -320,7 +320,13 @@ func (l *IssueList) assignToEpic(epicKey string, issue *jira.Issue) tea.Cmd {
 }
 
 func (l *IssueList) assignToUser(user *jira.User, issue *jira.Issue) {
-	err := l.c.AssignIssueV2(issue.Key, user.Name)
+	var err error
+	if viper.GetString("installation") == jira.InstallationTypeLocal {
+		err = l.c.AssignIssueV2(issue.Key, user.Name)
+	} else {
+		err = l.c.AssignIssue(issue.Key, user.AccountID)
+	}
+
 	if err != nil {
 		cmdutil.ExitIfError(err)
 	}

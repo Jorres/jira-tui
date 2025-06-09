@@ -8,10 +8,10 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/jorres/jira-tui/api"
+	"github.com/jorres/jira-tui/internal/bubble"
 	"github.com/jorres/jira-tui/internal/cmdutil"
 	D "github.com/jorres/jira-tui/internal/debug"
 	"github.com/jorres/jira-tui/internal/query"
-	"github.com/jorres/jira-tui/internal/viewBubble"
 	"github.com/jorres/jira-tui/pkg/jira"
 )
 
@@ -70,7 +70,7 @@ func ui(cmd *cobra.Command, args []string) {
 	epicQ.Params().Assignee = ""
 	fetchAllEpics := MakeFetcherFromQuery(epicQ, debug)
 
-	var tabs []*viewBubble.TabConfig
+	var tabs []*bubble.TabConfig
 	var total int
 
 	if len(tabConfigs) <= 1 {
@@ -85,7 +85,7 @@ func ui(cmd *cobra.Command, args []string) {
 			return
 		}
 
-		tabs = []*viewBubble.TabConfig{
+		tabs = []*bubble.TabConfig{
 			{
 				Project:     project,
 				Name:        "Issues",
@@ -95,7 +95,7 @@ func ui(cmd *cobra.Command, args []string) {
 			},
 		}
 	} else {
-		tabs = make([]*viewBubble.TabConfig, len(tabConfigs))
+		tabs = make([]*bubble.TabConfig, len(tabConfigs))
 		total = 0
 
 		for i, tabConfig := range tabConfigs {
@@ -106,7 +106,7 @@ func ui(cmd *cobra.Command, args []string) {
 
 			fetchIssues := MakeFetcherFromTabConfig(tabProject, cmd.Flags(), tabConfig, debug)
 
-			tabs[i] = &viewBubble.TabConfig{
+			tabs[i] = &bubble.TabConfig{
 				Project:     tabProject,
 				Name:        tabConfig.Name,
 				Columns:     tabConfig.Columns,
@@ -116,7 +116,7 @@ func ui(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	viewBubble.RunMainUI(project, server, total, tabs, timezone, debug)
+	bubble.RunMainUI(project, server, total, tabs, timezone, debug)
 }
 
 type ListTabConfig struct {
@@ -193,6 +193,6 @@ func SetFlags(cmd *cobra.Command) {
 	cmd.Flags().SortFlags = false
 
 	cmd.Flags().String("columns", "", "Comma separated list of columns to display in the plain mode.\n"+
-		fmt.Sprintf("Accepts: %s", strings.Join(viewBubble.ValidIssueColumns(), ", ")))
+		fmt.Sprintf("Accepts: %s", strings.Join(bubble.ValidIssueColumns(), ", ")))
 	cmd.Flags().Uint("fixed-columns", 1, "Number of fixed columns in the interactive mode")
 }

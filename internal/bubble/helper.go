@@ -1,4 +1,4 @@
-package viewBubble
+package bubble
 
 import (
 	"fmt"
@@ -10,7 +10,6 @@ import (
 	"github.com/fatih/color"
 	"github.com/mgutz/ansi"
 )
-
 
 func FormatDateTime(dt, format, tz string) string {
 	t, err := time.Parse(format, dt)

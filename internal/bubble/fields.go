@@ -1,4 +1,4 @@
-package viewBubble
+package bubble
 
 const (
 	FieldType       = "TYPE"

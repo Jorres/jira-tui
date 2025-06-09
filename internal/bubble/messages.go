@@ -1,4 +1,4 @@
-package viewBubble
+package bubble
 
 import (
 	"github.com/charmbracelet/bubbles/v2/list"
