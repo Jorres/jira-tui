@@ -544,12 +544,12 @@ func TestAddIssueComment(t *testing.T) {
 
 	client := NewClient(Config{Server: server.URL}, WithTimeout(3*time.Second))
 
-	err := client.AddIssueComment("TEST-1", "comment", false)
+	err := client.AddIssueCommentV2("TEST-1", "comment", false)
 	assert.NoError(t, err)
 
 	unexpectedStatusCode = true
 
-	err = client.AddIssueComment("TEST-1", "comment", false)
+	err = client.AddIssueCommentV2("TEST-1", "comment", false)
 	assert.Error(t, &ErrUnexpectedResponse{}, err)
 }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/jorres/jira-tui/internal/cmdcommon"
 	"github.com/jorres/jira-tui/internal/cmdutil"
 	"github.com/jorres/jira-tui/internal/debug"
+	"github.com/jorres/jira-tui/internal/editing"
 	"github.com/jorres/jira-tui/internal/query"
 	"github.com/jorres/jira-tui/internal/viewBubble"
 	"github.com/jorres/jira-tui/pkg/jira"
@@ -108,7 +109,7 @@ func edit(cmd *cobra.Command, args []string) {
 	var adf2mdTranslator *adf2md.Translator
 	// Create a user email resolver function
 	emailResolver := func(userID string) string {
-		return resolveUserIDToEmail(userID, client, project)
+		return editing.ResolveUserIDToEmail(userID, client, project)
 	}
 
 	adf2mdTranslator = adf2md.NewTranslator(adf2md.NewJiraMarkdownTranslator(
@@ -165,7 +166,7 @@ func edit(cmd *cobra.Command, args []string) {
 		getAnswers(client, params, issue)
 	}
 
-	md2adfTranslator, err := prepareMD2AdfTranslator(params.body, client, project, issue.Key, adf2mdTranslator)
+	md2adfTranslator, err := editing.PrepareMD2AdfTranslator(params.body, client, issue.Key, adf2mdTranslator)
 	if err != nil {
 		cmdutil.ExitIfError(err)
 	}
@@ -248,22 +249,26 @@ func edit(cmd *cobra.Command, args []string) {
 			err := checkV2Safe(params.body, params.comments, md2adfTranslator)
 
 			if err != nil {
-				if viper.GetString("installation") == jira.InstallationTypeLocal {
-					cmdutil.ExitIfError(fmt.Errorf(
-						"You are trying to edit an issue which contains Jira markdown elements, only supported in jira v3 api (your Jira only supports v2). "+
-							"Sending this content as is to Jira will CORRUPT the issue content for everybody else, thus it is forbidden. %w",
-						err,
-					))
-				}
-
-				// if there are no unsafe elements, we have to resort to V2 api...
-				useV3API = false
+				cmdutil.ExitIfError(jira.V3ContentToV2EndpointError(err))
 			}
+
+			// if there are no unsafe elements, we have to resort to V2 api...
+			useV3API = false
 		}
 
+		debug.Debug("useV3API: ", useV3API)
 		// Now process body and comments based on the chosen API version
+		debug.Debug("markdown body", string(params.body))
 		body, bodyIsRawADF := processBodyForAPI(params.body, useV3API, md2adfTranslator)
+		debug.Debug("adf body", string(body))
+
+		for _, comment := range params.comments {
+			debug.Debug("markdown comment", comment.id, comment.body)
+		}
 		editComments := processCommentsForAPI(params.comments, useV3API, md2adfTranslator)
+		for _, comment := range editComments {
+			debug.Debug("adf comment", comment.ID, comment.BodyIsRawADF, comment.Body)
+		}
 
 		parent := cmdutil.GetJiraIssueKey(project, params.parentIssueKey)
 		if parent == "" && issue.Fields.Parent != nil {
@@ -296,6 +301,7 @@ func edit(cmd *cobra.Command, args []string) {
 			return client.EditV2(params.issueKey, &edr)
 		}
 	}()
+
 	cmdutil.ExitIfError(err)
 
 	cmdutil.Success("Issue updated\n%s", cmdutil.GenerateServerBrowseURL(server, params.issueKey))
@@ -716,142 +722,6 @@ func getEditMetadataQuestions(meta []string, customFields []*jira.Field, issue *
 	return qs
 }
 
-// extractEmailsFromMarkdown extracts all @email patterns from markdown text
-func extractEmailsFromMarkdown(markdown string) []string {
-	// Pattern matches @word@domain.tld
-	emailPattern := regexp.MustCompile(`@[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
-	matches := emailPattern.FindAllString(markdown, -1)
-
-	// Remove duplicates
-	emailSet := make(map[string]bool)
-	var emails []string
-	for _, match := range matches {
-		if !emailSet[match] {
-			emailSet[match] = true
-			emails = append(emails, match)
-		}
-	}
-
-	return emails
-}
-
-// resolveUserIDs takes a list of @emails and returns a mapping of email -> userID
-func resolveUserIDs(emails []string, client *jira.Client, project, issueKey string) (map[string]string, error) {
-	userMapping := make(map[string]string)
-
-	users, err := client.GetAssignableToIssue(issueKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get all issues for email matching: %w", err)
-	}
-
-	userMap := make(map[string]*jira.User)
-	for _, user := range users {
-		userMap[user.Email] = user
-	}
-
-	for _, email := range emails {
-		// Remove @ prefix for user search
-		cleanEmail := strings.TrimPrefix(email, "@")
-
-		if user, exists := userMap[cleanEmail]; exists {
-			// Use AccountID for cloud installations, Name for server
-			it := viper.GetString("installation")
-			var userID string
-			if it == jira.InstallationTypeLocal {
-				userID = user.Name
-			} else {
-				userID = user.AccountID
-			}
-			userMapping[email] = userID
-			fmt.Fprintf(os.Stderr, "Info: Resolved %s to user ID %s\n", email, userID)
-		} else {
-			fmt.Fprintf(os.Stderr, "Error: failed to create mention from email, user not found: %s\n", cleanEmail)
-		}
-	}
-
-	return userMapping, nil
-}
-
-func prepareMD2AdfTranslator(body string, client *jira.Client, project, issueKey string, reverseTranslator *adf2md.Translator) (*md2adf.Translator, error) {
-	var userMapping map[string]string
-
-	emails := extractEmailsFromMarkdown(body)
-	if len(emails) != 0 {
-		var err error
-		userMapping, err = resolveUserIDs(emails, client, project, issueKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve user IDs: %w", err)
-		}
-		// If no users were resolved, fall back to standard conversion
-		if len(userMapping) == 0 {
-			return nil, fmt.Errorf("no users resolved from mentions")
-		}
-	}
-
-	// Convert markdown to ADF using the translator
-	return md2adf.NewTranslator(
-		md2adf.WithUserEmailMapping(userMapping),
-		md2adf.WithAdf2MdTranslator(reverseTranslator),
-	), nil
-}
-
-// convertMarkdownToADF converts markdown to ADF JSON string if mentions are found
-func convertMarkdownToADF(body string, translator *md2adf.Translator) (string, error) {
-	adfDoc, err := translator.TranslateToADF([]byte(body))
-	if err != nil {
-		return "", err
-	}
-
-	// Convert ADF document to JSON string
-	jsonBytes, err := adfDoc.ToJSON()
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal ADF to JSON: %w", err)
-	}
-
-	return string(jsonBytes), nil
-}
-
-// resolveUserIDToEmail resolves a Jira user ID to their email address
-func resolveUserIDToEmail(userID string, client *jira.Client, project string) string {
-	// Try to get user info by ID
-	user, err := api.ProxyUserGet(client, &jira.UserGetOptions{
-		AccountID: userID,
-	})
-
-	if err != nil {
-		return ""
-	}
-
-	// Check if we have an email field
-	if user.Email != "" {
-		return user.Email
-	}
-	// Some installations might use different field names
-	if user.Name != "" && strings.Contains(user.Name, "@") {
-		return user.Name
-	}
-
-	return ""
-}
-
-// checkV2SafeFallback is a temporary fallback until CheckV2Safe is implemented in md2adf
-func checkV2SafeFallback(body string) error {
-	// Simple heuristic: if content contains advanced markdown features, it might not be v2-safe
-	// This is a placeholder - replace with actual CheckV2Safe implementation
-	unsafePatterns := []string{
-		"@[",   // mentions
-		"<ac:", // Confluence macros
-		"```",  // code blocks (might have issues in v2)
-	}
-
-	for _, pattern := range unsafePatterns {
-		if strings.Contains(body, pattern) {
-			return fmt.Errorf("content contains v3-only features")
-		}
-	}
-	return nil
-}
-
 // processBodyForAPI processes the body based on the chosen API version
 func processBodyForAPI(body string, useV3API bool, translator *md2adf.Translator) (string, bool) {
 	bodyIsRawADF := false
@@ -862,7 +732,7 @@ func processBodyForAPI(body string, useV3API bool, translator *md2adf.Translator
 
 	if useV3API {
 		// Use ADF for v3 API
-		adfBody, convErr := convertMarkdownToADF(body, translator)
+		adfBody, convErr := editing.ConvertMarkdownToADF(body, translator)
 		if convErr != nil {
 			cmdutil.ExitIfError(fmt.Errorf("Failed to convert markdown to adf, this may be a translator bug; %w", convErr))
 		} else {

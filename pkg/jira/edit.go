@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jorres/md2adf-translator/md2adf"
 	"log"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/jorres/md2adf-translator/md2adf"
 
 	"github.com/jorres/jira-tui/internal/debug"
 )
@@ -137,10 +138,20 @@ func (c *Client) EditV2(key string, req *EditRequest) error {
 	return nil
 }
 
+func V3ContentToV2EndpointError(err error) error {
+	return fmt.Errorf(
+		"You are trying to edit an issue which contains Jira markdown elements, only supported in jira v3 api (your Jira only supports v2). "+
+			"Sending this content as is to Jira will CORRUPT the issue content for everybody else, thus it is forbidden. %w",
+		err,
+	)
+}
+
 // updateComment updates a single comment using PUT /issue/{key}/comment/{commentId} endpoint.
 func (c *Client) updateComment(issueKey string, comment EditComment) error {
 	path := fmt.Sprintf("/issue/%s/comment/%s", issueKey, comment.ID)
 
+	// This little dance is a dirty hack required to push the json into a struct
+	// should be rewritten ASAP
 	var requestBody any
 	// Parse the ADF JSON string into a map for direct embedding
 	var adfMap any

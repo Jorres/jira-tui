@@ -10,6 +10,7 @@ import (
 	"github.com/jorres/jira-tui/api"
 	"github.com/jorres/jira-tui/internal/cmdcommon"
 	"github.com/jorres/jira-tui/internal/cmdutil"
+	"github.com/jorres/jira-tui/internal/editing"
 	"github.com/jorres/jira-tui/internal/query"
 	"github.com/jorres/jira-tui/pkg/jira"
 	"github.com/jorres/jira-tui/pkg/surveyext"
@@ -103,7 +104,25 @@ func add(cmd *cobra.Command, args []string) {
 		s := cmdutil.Info("Adding comment")
 		defer s.Stop()
 
-		return client.AddIssueComment(ac.params.issueKey, ac.params.body, ac.params.internal)
+		installation := viper.GetString("installation")
+		translator, err := editing.PrepareMD2AdfTranslator(ac.params.body, client, ac.params.issueKey, nil)
+		if err != nil {
+			cmdutil.ExitIfError(err)
+		}
+
+		if installation == jira.InstallationTypeLocal {
+			if err := translator.CheckSafeForV2(ac.params.body); err != nil {
+				cmdutil.ExitIfError(jira.V3ContentToV2EndpointError(err))
+			}
+			return client.AddIssueCommentV2(ac.params.issueKey, ac.params.body, ac.params.internal)
+		} else {
+			adfDoc, err := translator.TranslateToADF([]byte(ac.params.body))
+			if err != nil {
+				cmdutil.ExitIfError(fmt.Errorf("failed to convert your new comment to ADF: %w", err))
+			}
+			return client.AddIssueComment(ac.params.issueKey, adfDoc, ac.params.internal)
+		}
+
 	}()
 	cmdutil.ExitIfError(err)
 

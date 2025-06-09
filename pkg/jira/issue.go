@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jorres/jira-tui/internal/debug"
 	"github.com/jorres/jira-tui/pkg/jira/filter/issue"
 
 	"github.com/jorres/md2adf-translator/adf"
@@ -342,14 +343,59 @@ type issueCommentRequest struct {
 }
 
 // AddIssueComment adds comment to an issue using POST /issue/{key}/comment endpoint.
-func (c *Client) AddIssueComment(key, comment string, internal bool) error {
-	body, err := json.Marshal(&issueCommentRequest{Body: md.ToJiraMD(comment), Properties: []issueCommentProperty{{Key: "sd.public.comment", Value: issueCommentPropertyValue{Internal: internal}}}})
+func (c *Client) AddIssueCommentV2(key, comment string, internal bool) error {
+	body, err := json.Marshal(
+		&issueCommentRequest{
+			Body: md.ToJiraMD(comment),
+			Properties: []issueCommentProperty{{
+				Key:   "sd.public.comment",
+				Value: issueCommentPropertyValue{Internal: internal},
+			}},
+		},
+	)
 	if err != nil {
 		return err
 	}
 
 	path := fmt.Sprintf("/issue/%s/comment", key)
 	res, err := c.PostV2(context.Background(), path, body, Header{
+		"Accept":       "application/json",
+		"Content-Type": "application/json",
+	})
+	if err != nil {
+		return err
+	}
+	if res == nil {
+		return ErrEmptyResponse
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	if res.StatusCode != http.StatusCreated {
+		return formatUnexpectedResponse(res)
+	}
+	return nil
+}
+
+// AddIssueComment adds comment to an issue using POST /issue/{key}/comment endpoint.
+func (c *Client) AddIssueComment(key string, comment *adf.ADFDocument, internal bool) error {
+	requestBody := map[string]any{
+		"body": comment,
+		"properties": []issueCommentProperty{{
+			Key:   "sd.public.comment",
+			Value: issueCommentPropertyValue{Internal: internal},
+		}},
+	}
+
+	body, err := json.Marshal(requestBody)
+
+	debug.Debug("add comment payload", body)
+
+	if err != nil {
+		return fmt.Errorf("failed to marshal comment request: %w", err)
+	}
+
+	path := fmt.Sprintf("/issue/%s/comment", key)
+	res, err := c.Post(context.Background(), path, body, Header{
 		"Accept":       "application/json",
 		"Content-Type": "application/json",
 	})
