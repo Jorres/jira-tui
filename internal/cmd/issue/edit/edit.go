@@ -256,19 +256,10 @@ func edit(cmd *cobra.Command, args []string) {
 			useV3API = false
 		}
 
-		debug.Debug("useV3API: ", useV3API)
 		// Now process body and comments based on the chosen API version
-		debug.Debug("markdown body", string(params.body))
 		body, bodyIsRawADF := processBodyForAPI(params.body, useV3API, md2adfTranslator)
-		debug.Debug("adf body", string(body))
 
-		for _, comment := range params.comments {
-			debug.Debug("markdown comment", comment.id, comment.body)
-		}
 		editComments := processCommentsForAPI(params.comments, useV3API, md2adfTranslator)
-		for _, comment := range editComments {
-			debug.Debug("adf comment", comment.ID, comment.BodyIsRawADF, comment.Body)
-		}
 
 		parent := cmdutil.GetJiraIssueKey(project, params.parentIssueKey)
 		if parent == "" && issue.Fields.Parent != nil {

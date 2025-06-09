@@ -4,15 +4,37 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 )
 
 func Debug(v ...any) {
-	f, _ := os.OpenFile("/home/jorres/hobbies/jira-coalition/jira-tui/debug.log", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+
+	dir := filepath.Join(home, "hobbies", "jira-coalition", "jira-tui")
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return
+	}
+
+	logPath := filepath.Join(dir, "debug.log")
+	f, err := os.OpenFile(logPath,
+		os.O_CREATE|os.O_WRONLY|os.O_APPEND,
+		0o644,
+	)
+
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
 	for _, val := range v {
 		fmt.Fprint(f, val, " ")
 	}
+
 	fmt.Fprintln(f)
-	f.Close()
 }
 
 func Fatal(v ...any) {

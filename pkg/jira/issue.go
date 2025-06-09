@@ -388,7 +388,7 @@ func (c *Client) AddIssueComment(key string, comment *adf.ADFDocument, internal 
 
 	body, err := json.Marshal(requestBody)
 
-	debug.Debug("add comment payload", body)
+	debug.Debug("add comment payload", string(body))
 
 	if err != nil {
 		return fmt.Errorf("failed to marshal comment request: %w", err)
