@@ -6,11 +6,12 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/spinner"
-	"github.com/charmbracelet/bubbles/v2/table"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/jorres/jira-tui/api"
+	forkedTable "github.com/jorres/jira-tui/internal/bubble/table"
 	"github.com/jorres/jira-tui/internal/debug"
+	"github.com/jorres/jira-tui/internal/exp"
 	"github.com/jorres/jira-tui/pkg/jira"
 	"github.com/jorres/jira-tui/pkg/jira/filter/issue"
 )
@@ -32,7 +33,7 @@ type TableData [][]string
 
 // Table is a bubble tea model for rendering tables.
 type Table struct {
-	table       table.Model
+	table       forkedTable.Model
 	footerText  string
 	helpText    string
 	showHelp    bool
@@ -64,6 +65,9 @@ type Table struct {
 
 	// Data provider for getting table data
 	dataProvider DataProvider
+
+	// Background color resolver function
+	backgroundColorResolver exp.BacklightResolver
 
 	// Spinner for loading state
 	spinner spinner.Model
@@ -106,12 +110,12 @@ func NewTable(opts ...TableOption) *Table {
 		spinner:      s,
 	}
 
-	t.table = table.New(
-		table.WithFocused(true),
+	t.table = forkedTable.New(
+		forkedTable.WithFocused(true),
 	)
 
 	// Set up table styles
-	st := table.DefaultStyles()
+	st := forkedTable.DefaultStyles()
 	st.Header = st.Header.
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color(getPaleColor())).
@@ -266,6 +270,10 @@ func (t *Table) SetIssueData(issues []*jira.Issue) {
 	}
 }
 
+func (t *Table) SetBacklightResolver(resolver exp.BacklightResolver) {
+	t.backgroundColorResolver = resolver
+}
+
 // GetIssueData returns the current issue data
 func (t *Table) GetIssueData() []*jira.Issue {
 	return t.allIssues
@@ -293,24 +301,27 @@ func (t *Table) SetDataProvider(provider DataProvider) {
 
 func (t *Table) setInnerTableColumnsRows() {
 	var data TableData
+	var issues []*jira.Issue
 	if t.SorterState == SorterInactive {
 		data = t.makeTableData(t.allIssues)
+		issues = t.allIssues
 	} else {
 		data = t.makeTableData(t.filteredIssues)
+		issues = t.filteredIssues
 	}
 
-	columns := make([]table.Column, len(data[0]))
+	columns := make([]forkedTable.Column, len(data[0]))
 	for i, col := range data[0] {
 		oneWidth := t.columnWidth(col, data)
-		columns[i] = table.Column{
+		columns[i] = forkedTable.Column{
 			Title: col,
 			Width: oneWidth,
 		}
 	}
 
-	rows := make([]table.Row, len(data)-1)
+	rows := make([]forkedTable.Row, len(data)-1)
 	for i := 1; i < len(data); i++ {
-		row := make(table.Row, len(data[i]))
+		row := make(forkedTable.Row, len(data[i]))
 		for j, cell := range data[i] {
 			row[j] = cell
 		}
@@ -319,6 +330,30 @@ func (t *Table) setInnerTableColumnsRows() {
 
 	t.table.SetColumns(columns)
 	t.table.SetRows(rows)
+
+	// Apply background colors if resolver is set
+	if t.backgroundColorResolver != nil && len(issues) > 0 {
+		for i, issue := range issues {
+			if i < len(rows) {
+				backgroundColor := t.backgroundColorResolver(issue)
+				if backgroundColor != nil {
+					// Apply custom background color only to the first column
+					rowStyles := make([]lipgloss.Style, len(columns))
+					for j := range rowStyles {
+						if j == 0 {
+							// Apply background color only to first column
+							rowStyles[j] = forkedTable.DefaultStyles().Cell.Background(*backgroundColor)
+						} else {
+							// Use default cell style for other columns
+							rowStyles[j] = forkedTable.DefaultStyles().Cell
+						}
+					}
+					t.table.SetRowStyles(i, rowStyles)
+				}
+				// If backgroundColor is nil, don't set any custom styles (use forked table defaults)
+			}
+		}
+	}
 }
 
 // View renders the table.

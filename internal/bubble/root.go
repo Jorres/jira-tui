@@ -12,6 +12,8 @@ import (
 	"github.com/jorres/jira-tui/api"
 	"github.com/jorres/jira-tui/internal/cmdutil"
 	"github.com/jorres/jira-tui/internal/debug"
+	"github.com/jorres/jira-tui/internal/exp"
+	"github.com/jorres/jira-tui/internal/query"
 	"github.com/jorres/jira-tui/pkg/jira"
 	"github.com/spf13/viper"
 
@@ -43,11 +45,21 @@ func getDefaultIssueColumns() []string {
 
 // TabConfig holds configuration for a single tab
 type TabConfig struct {
-	Name        string
-	Project     string
-	Columns     []string
-	FetchIssues func() ([]*jira.Issue, int)
-	FetchEpics  func() ([]*jira.Issue, int)
+	Name              string
+	Project           string
+	Columns           []string
+	BoardId           int
+	QueryParams       *query.IssueParams
+	FetchIssues       func() ([]*jira.Issue, int)
+	FetchEpics        func() ([]*jira.Issue, int)
+	BoardStateChecker exp.BoardStateChecker
+}
+
+func (tc *TabConfig) getColumns() []string {
+	if len(tc.Columns) > 0 {
+		return tc.Columns
+	}
+	return getDefaultIssueColumns()
 }
 
 // IssueList is a list view for issues.
@@ -66,8 +78,10 @@ type IssueList struct {
 
 	err error
 
-	rawWidth  int
-	rawHeight int
+	rawWidth      int
+	rawHeight     int
+	tableHeight   int
+	previewHeight int
 
 	fuzzy *FuzzySelector
 
@@ -80,23 +94,13 @@ type IssueList struct {
 	cachedAllUsers []*jira.User
 }
 
-func RunMainUI(
-	project, server string,
-	total int,
-	tabs []*TabConfig,
-	timezone string,
-	debug bool,
-) *IssueList {
-	const tableHelpText = "?: toggle help"
-
-	splitViewHelpText := tableHelpText
-
+func RunMainUI(project, server string, total int, tabs []*TabConfig, timezone string, debugMode bool) {
 	l := &IssueList{
 		Project: project,
 		Server:  server,
 		Total:   total,
 
-		c:                api.DefaultClient(debug),
+		c:                api.DefaultClient(debugMode),
 		tabs:             tabs,
 		activeTab:        0,
 		tables:           make([]*Table, len(tabs)),
@@ -108,37 +112,49 @@ func RunMainUI(
 
 	p := tea.NewProgram(l, tea.WithAltScreen())
 
-	for i, tabConfig := range tabs {
-		table := NewTable(
-			WithTableHelpText(splitViewHelpText),
-		)
-
-		// Use default columns if not specified in tab config
-		columnsToUse := tabConfig.Columns
-		if len(columnsToUse) == 0 {
-			columnsToUse = getDefaultIssueColumns()
-		}
-
-		table.SetColumns(columnsToUse)
-		table.SetTimezone(timezone)
-
-		l.tables[i] = table
-		l.issueDetailViews[i] = NewIssueModel(l.Server)
-
-		go func() {
-			issues, _ := tabConfig.FetchIssues()
-			p.Send(IncomingIssueListMsg{issues: issues, index: i})
-		}()
-	}
-
 	_, err := p.Run()
-
 	if err != nil {
 		fmt.Println("Error running program:", err)
 		os.Exit(1)
 	}
+}
 
-	return l
+func (l *IssueList) reinitTable(index int) tea.Cmd {
+	const tableHelpText = "?: toggle help"
+	tabConfig := l.tabs[index]
+	table := NewTable(WithTableHelpText(tableHelpText))
+	table.SetColumns(tabConfig.getColumns())
+	table.SetTimezone("Local")
+	l.tables[index] = table
+
+	var tableUpdateCmd tea.Cmd
+	l.tables[index], tableUpdateCmd = table.Update(WidgetSizeMsg{
+		Height: l.tableHeight,
+		Width:  l.rawWidth,
+	})
+
+	cmd2 := table.spinner.Tick
+
+	return tea.Batch(tableUpdateCmd, cmd2, func() tea.Msg {
+		backlightResolver, boardStateChecker := exp.CreateBacklightResolver(l.c, tabConfig.BoardId, tabConfig.QueryParams)
+		tabConfig.BoardStateChecker = boardStateChecker
+
+		issues, _ := tabConfig.FetchIssues()
+		return IncomingIssueListMsg{issues: issues, index: index, resolver: backlightResolver}
+	})
+}
+
+func (l *IssueList) reinitIssue(index int) tea.Cmd {
+	var issueUpdateCmd tea.Cmd
+	cmds := []tea.Cmd{}
+	l.issueDetailViews[index] = NewIssueModel(l.Server)
+	l.issueDetailViews[index], issueUpdateCmd = l.issueDetailViews[index].Update(WidgetSizeMsg{
+		Height: l.previewHeight,
+		Width:  l.rawWidth,
+	})
+	cmds = append(cmds, issueUpdateCmd)
+	cmds = append(cmds, l.issueDetailViews[index].spinner.Tick)
+	return tea.Batch(cmds...)
 }
 
 // setStatusMessage sets a temporary status message that will be cleared after 1 second
@@ -262,6 +278,17 @@ func (l *IssueList) addComment(iss *jira.Issue) tea.Cmd {
 	})
 }
 
+func (l *IssueList) toggleBacklogState(issue *jira.Issue) tea.Cmd {
+	return func() tea.Msg {
+		tabConfig := l.getCurrentTabConfig()
+		err := exp.ToggleIssueBacklogState(l.c, tabConfig.BoardId, issue, tabConfig.BoardStateChecker)
+		if err != nil {
+			return IssueBacklogToggleMsg{issueKey: issue.Key, err: err, stderr: err.Error()}
+		}
+		return IssueBacklogToggleMsg{issueKey: issue.Key, err: nil, stderr: ""}
+	}
+}
+
 func (l *IssueList) moveIssue(issue *jira.Issue) tea.Cmd {
 	args := []string{}
 
@@ -353,8 +380,10 @@ func (l *IssueList) bulkSendMsgToAllTablesAndIssues(tableMsg, issueMsg tea.Msg) 
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 	for key := range l.tables {
-		l.tables[key], cmd = l.tables[key].Update(tableMsg)
-		cmds = append(cmds, cmd)
+		if l.tables[key] != nil { // tables might be uninitialized right after start
+			l.tables[key], cmd = l.tables[key].Update(tableMsg)
+			cmds = append(cmds, cmd)
+		}
 
 		l.issueDetailViews[key], cmd = l.issueDetailViews[key].Update(issueMsg)
 		cmds = append(cmds, cmd)
@@ -378,23 +407,14 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(l.tabs) > 1 {
 			tabHeight = 2
 		}
-		tableHeight := int(0.4 * float32(l.rawHeight-tabHeight))
-		previewHeight := l.rawHeight - tableHeight - tabHeight
+		l.tableHeight = int(0.4 * float32(l.rawHeight-tabHeight))
+		l.previewHeight = l.rawHeight - l.tableHeight - tabHeight
 
-		cmds := l.bulkSendMsgToAllTablesAndIssues(
-			WidgetSizeMsg{
-				Height: tableHeight,
-				Width:  l.rawWidth,
-			},
-			WidgetSizeMsg{
-				Height: previewHeight,
-				Width:  l.rawWidth,
-			},
-		)
-
-		tableSpinner := l.getCurrentTable().spinner.Tick
-		issueSpinner := l.getCurrentIssueDetailView().spinner.Tick
-		cmds = append(cmds, tableSpinner, issueSpinner)
+		var cmds []tea.Cmd
+		for i, _ := range l.tabs {
+			cmds = append(cmds, l.reinitTable(i))
+			cmds = append(cmds, l.reinitIssue(i))
+		}
 
 		return l, tea.Batch(cmds...)
 	case spinner.TickMsg:
@@ -410,7 +430,10 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case IncomingIssueListMsg:
 		var cmd tea.Cmd
 		thisTable := l.tables[msg.index]
+
 		thisTable.SetIssueData(msg.issues)
+		thisTable.SetBacklightResolver(msg.resolver)
+
 		if len(msg.issues) > 0 {
 			cmd = thisTable.GetIssueAsync(msg.index, 0)
 		}
@@ -420,22 +443,27 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			return l.processError(msg.err, msg.stderr), cmd
 		}
-		return l.refreshCurrentLine()
+		return l, l.reinitTable(l.activeTab)
 	case IssueMovedMsg:
 		if msg.err != nil {
 			return l.processError(msg.err, msg.stderr), cmd
 		}
-		return l.refreshCurrentLine()
+		return l, l.reinitTable(l.activeTab)
 	case IssueAssignedToEpicMsg:
 		if msg.err != nil {
 			return l.processError(msg.err, msg.stderr), cmd
 		}
-		return l.refreshCurrentLine()
+		return l, l.reinitTable(l.activeTab)
 	case IssueCreatedMsg:
 		if msg.err != nil {
 			return l.processError(msg.err, msg.stderr), cmd
 		}
-		return l.refreshCurrentLine()
+		return l, l.reinitTable(l.activeTab)
+	case IssueBacklogToggleMsg:
+		if msg.err != nil {
+			return l.processError(msg.err, msg.stderr), cmd
+		}
+		return l, l.reinitTable(l.activeTab)
 	case StatusClearMsg:
 		l.statusMessage = ""
 		if l.statusTimer != nil {
@@ -546,6 +574,8 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return l, l.createIssue(l.getCurrentTabConfig().Project)
 		case "c":
 			return l, l.addComment(l.getCurrentTable().GetIssueSync(0))
+		case "b":
+			return l, l.toggleBacklogState(l.getCurrentTable().GetIssueSync(0))
 		case "ctrl+r":
 			return l.refreshCurrentLine()
 		case "?":
@@ -570,6 +600,9 @@ func (l *IssueList) refreshCurrentLine() (tea.Model, tea.Cmd) {
 	refreshedIss := currentTable.GetIssueSyncNoCache(0)
 	cmd1 := l.updateCurrentIssue(refreshedIss)
 
+	_, boardStateChecker := exp.CreateBacklightResolver(l.c, l.tabs[l.activeTab].BoardId, l.tabs[l.activeTab].QueryParams)
+	l.tabs[l.activeTab].BoardStateChecker = boardStateChecker
+
 	var cmd2 tea.Cmd
 	l.tables[l.activeTab], cmd2 = currentTable.Update(refreshedIss)
 
@@ -591,8 +624,9 @@ func (l *IssueList) View() string {
 
 	currentTable := l.getCurrentTable()
 	if currentTable == nil {
-		panic("no current table configured, should not happen")
+		return ""
 	}
+
 	currentView := l.getCurrentIssueDetailView()
 
 	// Update footer text based on status message

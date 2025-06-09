@@ -18,16 +18,19 @@ type GroupFunc func()
 
 // JQL is a jira query language constructor.
 type JQL struct {
-	project string
 	filters []string
 	orderBy string
 }
 
 // NewJQL initializes jql query builder.
 func NewJQL(project string) *JQL {
+	filters := []string{}
+	if project != "" {
+		filters = append(filters, fmt.Sprintf("project=%q", project))
+	}
+
 	return &JQL{
-		project: project,
-		filters: []string{fmt.Sprintf("project=%q", project)},
+		filters: filters,
 	}
 }
 

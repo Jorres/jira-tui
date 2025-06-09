@@ -2,6 +2,7 @@ package bubble
 
 import (
 	"github.com/charmbracelet/bubbles/v2/list"
+	"github.com/jorres/jira-tui/internal/exp"
 	"github.com/jorres/jira-tui/pkg/jira"
 )
 
@@ -43,6 +44,12 @@ type IssueAssignedToEpicMsg struct {
 	stderr   string
 }
 
+type IssueBacklogToggleMsg struct {
+	issueKey string
+	err      error
+	stderr   string
+}
+
 type SelectedIssueMsg struct{ issue *jira.Issue }
 
 type FuzzySelectorResultMsg struct {
@@ -51,8 +58,9 @@ type FuzzySelectorResultMsg struct {
 }
 
 type IncomingIssueListMsg struct {
-	issues []*jira.Issue
-	index  int
+	issues   []*jira.Issue
+	index    int
+	resolver exp.BacklightResolver
 }
 
 type IncomingIssueMsg struct {

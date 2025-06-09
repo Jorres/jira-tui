@@ -85,11 +85,16 @@ func ui(cmd *cobra.Command, args []string) {
 			return
 		}
 
+		// Use the default board ID from config for single tab
+		defaultBoardId := viper.GetInt("board.id")
+
 		tabs = []*bubble.TabConfig{
 			{
 				Project:     project,
 				Name:        "Issues",
 				Columns:     columnsList,
+				BoardId:     defaultBoardId,
+				QueryParams: &query.IssueParams{},
 				FetchIssues: fetchIssuesWithArgs,
 				FetchEpics:  fetchAllEpics,
 			},
@@ -110,6 +115,8 @@ func ui(cmd *cobra.Command, args []string) {
 				Project:     tabProject,
 				Name:        tabConfig.Name,
 				Columns:     tabConfig.Columns,
+				BoardId:     tabConfig.BoardId,
+				QueryParams: &tabConfig.IssueParams,
 				FetchIssues: fetchIssues,
 				FetchEpics:  fetchAllEpics,
 			}
@@ -123,6 +130,7 @@ type ListTabConfig struct {
 	Name              string   `mapstructure:"name"`
 	Project           string   `mapstructure:"project"`
 	Columns           []string `mapstructure:"columns"`
+	BoardId           int      `mapstructure:"boardId"`
 	query.IssueParams `mapstructure:",squash"`
 }
 
@@ -139,10 +147,10 @@ func MakeFetcherFromTabConfig(project string, baseFlags query.FlagParser, tabCon
 		}
 
 		q := &query.Issue{
-			Project: project,
-			Flags:   baseFlags,
+			Flags: baseFlags,
 		}
 
+		params.Project = project
 		q.SetParams(&params)
 
 		issues, total, err := func() ([]*jira.Issue, int, error) {

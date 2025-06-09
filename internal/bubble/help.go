@@ -160,6 +160,7 @@ func (h *HelpView) prepareRenderedLines() {
 		"  " + keyStyle.Render("e") + "                 " + descStyle.Render("'e'dit current issue"),
 		"  " + keyStyle.Render("m") + "                 " + descStyle.Render("'m'ove issue to different status"),
 		"  " + keyStyle.Render("c") + "                 " + descStyle.Render("add 'c'omment to issue"),
+		"  " + keyStyle.Render("b") + "                 " + descStyle.Render("toggle 'b'acklog/board state"),
 		"  " + keyStyle.Render("u") + "                 " + descStyle.Render("copy issue 'u'rl to clipboard"),
 	}
 

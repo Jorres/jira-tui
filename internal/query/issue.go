@@ -11,8 +11,7 @@ import (
 
 // Issue is a query type for issue command.
 type Issue struct {
-	Project string
-	Flags   FlagParser
+	Flags FlagParser
 
 	params *IssueParams
 }
@@ -23,10 +22,10 @@ const defaultLimit = 100
 func NewDefaultIssue(project string, flags FlagParser) *Issue {
 	ip := IssueParams{}
 	ip.initEmpty()
+	ip.Project = project
 	return &Issue{
-		Project: project,
-		Flags:   flags,
-		params:  &ip,
+		Flags:  flags,
+		params: &ip,
 	}
 }
 
@@ -36,10 +35,10 @@ func NewIssue(project string, flags FlagParser) (*Issue, error) {
 	if err := ip.init(flags); err != nil {
 		return nil, err
 	}
+	ip.Project = project
 	return &Issue{
-		Project: project,
-		Flags:   flags,
-		params:  &ip,
+		Flags:  flags,
+		params: &ip,
 	}, nil
 }
 
@@ -70,7 +69,7 @@ func (i *Issue) Get() string {
 		}
 	}()
 
-	q, obf := jql.NewJQL(i.Project), i.params.OrderBy
+	q, obf := jql.NewJQL(i.params.Project), i.params.OrderBy
 	if obf == "created" &&
 		(i.params.Updated != "" || i.params.UpdatedBefore != "" || i.params.UpdatedAfter != "") &&
 		(i.params.Created == "" && i.params.CreatedBefore == "" && i.params.CreatedAfter == "") {
@@ -182,6 +181,7 @@ func (i *Issue) setUpdatedFilters(q *jql.JQL) {
 
 // IssueParams is issue command parameters.
 type IssueParams struct {
+	Project       string
 	Latest        bool
 	Watching      bool
 	Resolution    string
