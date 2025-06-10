@@ -512,25 +512,6 @@ func (t *Table) assignColumns(columns []string, issue *jira.Issue) []string {
 	return bucket
 }
 
-func (t *Table) getKeyUnderCursorWithShift(shift int) string {
-	row := t.GetCursorRow()
-	var issuePool []*jira.Issue
-	if t.SorterState == SorterInactive {
-		issuePool = t.allIssues
-	} else {
-		issuePool = t.filteredIssues
-	}
-	pos := row + shift
-	if pos < 0 {
-		pos = 0
-	}
-	if pos >= len(issuePool) {
-		pos = len(issuePool) - 1
-	}
-
-	return issuePool[pos].Key
-}
-
 func (t *Table) GetIssueSync(shift int) *jira.Issue {
 	key := t.getKeyUnderCursorWithShift(shift)
 
@@ -548,9 +529,36 @@ func (t *Table) GetIssueSync(shift int) *jira.Issue {
 	return iss
 }
 
+func (t *Table) getKeyUnderCursorWithShift(shift int) string {
+	row := t.GetCursorRow()
+	var issuePool []*jira.Issue
+	if t.SorterState == SorterInactive {
+		issuePool = t.allIssues
+	} else {
+		issuePool = t.filteredIssues
+	}
+	pos := row + shift
+	if pos < 0 {
+		pos = 0
+	}
+	if pos >= len(issuePool) {
+		pos = len(issuePool) - 1
+	}
+
+	if pos == -1 {
+		return ""
+	}
+
+	return issuePool[pos].Key
+}
+
 func (t *Table) GetIssueAsync(i int, shift int) tea.Cmd {
 	key := t.getKeyUnderCursorWithShift(shift)
 	return func() tea.Msg {
+		if key == "" {
+			return NopMsg{}
+		}
+
 		if iss, ok := t.issueCache[key]; ok {
 			return IncomingIssueMsg{index: i, issue: iss}
 		}
@@ -562,53 +570,5 @@ func (t *Table) GetIssueAsync(i int, shift int) tea.Cmd {
 
 		t.issueCache[key] = iss
 		return IncomingIssueMsg{index: i, issue: iss}
-	}
-}
-
-func (t *Table) ScheduleIssueUpdateMessage(shift int) tea.Cmd {
-	row := t.GetCursorRow()
-	var issuePool []*jira.Issue
-	if t.SorterState == SorterInactive {
-		issuePool = t.allIssues
-	} else {
-		issuePool = t.filteredIssues
-	}
-
-	if len(issuePool) == 0 {
-		return func() tea.Msg {
-			return NopMsg{}
-		}
-	}
-
-	pos := row + shift
-	if pos < 0 {
-		pos = 0
-	}
-	if pos >= len(issuePool) {
-		pos = len(issuePool) - 1
-	}
-
-	key := issuePool[pos].Key
-
-	return func() tea.Msg {
-		if iss, ok := t.issueCache[key]; ok {
-			return CurrentIssueReceivedMsg{
-				Table: t,
-				Issue: iss,
-				Pos:   pos,
-			}
-		}
-
-		iss, err := api.ProxyGetIssue(api.DefaultClient(false), key, issue.NewNumCommentsFilter(10))
-		if err != nil {
-			panic(err)
-		}
-
-		t.issueCache[key] = iss
-		return CurrentIssueReceivedMsg{
-			Table: t,
-			Issue: iss,
-			Pos:   pos,
-		}
 	}
 }

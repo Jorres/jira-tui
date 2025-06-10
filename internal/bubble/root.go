@@ -390,12 +390,6 @@ func (l *IssueList) assignToUser(user *jira.User, issue *jira.Issue) {
 	}
 }
 
-func (l *IssueList) updateCurrentIssue(msg tea.Msg) tea.Cmd {
-	m, cmd := l.getCurrentIssueDetailView().Update(msg)
-	l.issueDetailViews[l.activeTab] = m
-	return cmd
-}
-
 func (l *IssueList) SafelyGetAssignableUsers(issueKey string) ([]*jira.User, error) {
 	var err error
 	if l.cachedAllUsers == nil {
@@ -519,20 +513,13 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			l.assignToUser(user, issue)
 			return l, l.reinitOnlyOneIssue(l.activeTab, issue.Key)
 		}
-	case CurrentIssueReceivedMsg:
-		currentTable := l.getCurrentTable()
-
-		if msg.Table == currentTable && msg.Pos == currentTable.GetCursorRow() {
-			cmd = l.updateCurrentIssue(msg.Issue)
-			return l, cmd
-		}
 	case tea.KeyMsg:
 		currentTable := l.getCurrentTable()
 		if currentTable != nil {
 			if currentTable.SorterState == SorterFiltering {
 				var cmd1, cmd2 tea.Cmd
 				l.tables[l.activeTab], cmd1 = currentTable.Update(msg)
-				cmd2 = l.tables[l.activeTab].ScheduleIssueUpdateMessage(0)
+				cmd2 = l.tables[l.activeTab].GetIssueAsync(l.activeTab, 0)
 				return l, tea.Batch(cmd1, cmd2)
 			}
 
@@ -562,13 +549,13 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			currentTable := l.getCurrentTable()
 			var cmd1, cmd2 tea.Cmd
-			cmd1 = currentTable.ScheduleIssueUpdateMessage(-1)
+			cmd1 = currentTable.GetIssueAsync(l.activeTab, -1)
 			l.tables[l.activeTab], cmd = currentTable.Update(msg)
 			return l, tea.Batch(cmd1, cmd2)
 		case "down", "j":
 			currentTable := l.getCurrentTable()
 			var cmd1, cmd2 tea.Cmd
-			cmd1 = currentTable.ScheduleIssueUpdateMessage(+1)
+			cmd1 = currentTable.GetIssueAsync(l.activeTab, +1)
 			l.tables[l.activeTab], cmd = currentTable.Update(msg)
 			return l, tea.Batch(cmd1, cmd2)
 		case "a":
@@ -622,7 +609,8 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Forwarding to issue:
 		case "ctrl+e", "ctrl+y", "tab":
-			cmd := l.updateCurrentIssue(msg)
+			m, cmd := l.getCurrentIssueDetailView().Update(msg)
+			l.issueDetailViews[l.activeTab] = m
 			return l, cmd
 		// Forwarding straight to table:
 		case "/":

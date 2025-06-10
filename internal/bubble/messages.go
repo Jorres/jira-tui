@@ -15,12 +15,6 @@ type WidgetSizeMsg struct {
 
 type NopMsg struct{}
 
-type CurrentIssueReceivedMsg struct {
-	Table *Table
-	Issue *jira.Issue
-	Pos   int
-}
-
 type IssueEditedMsg struct {
 	issueKey string
 	err      error
