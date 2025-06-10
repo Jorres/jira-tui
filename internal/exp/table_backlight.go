@@ -2,6 +2,7 @@ package exp
 
 import (
 	"fmt"
+
 	"github.com/jorres/jira-tui/internal/debug"
 	"github.com/jorres/jira-tui/internal/query"
 	"github.com/jorres/jira-tui/pkg/jira"
@@ -13,6 +14,14 @@ type BoardStateResolver struct {
 
 func (r *BoardStateResolver) IsOnBoard(issueKey string) bool {
 	return !r.backlogIssueKeys[issueKey]
+}
+
+func (r *BoardStateResolver) SetBacklogState(issueKey string, newState BacklogState) {
+	if newState == InBacklog {
+		r.backlogIssueKeys[issueKey] = true
+	} else {
+		delete(r.backlogIssueKeys, issueKey)
+	}
 }
 
 // fetchBacklogIssueKeys fetches all issue keys from the configured board's backlog
@@ -37,34 +46,6 @@ func fetchBacklogIssueKeys(client *jira.Client, boardID string, queryParams *que
 	return issueKeys, nil
 }
 
-// createBackgroundColorResolver creates a resolver function that uses backlog issue data
-// func createBackgroundColorResolver(backlogIssueKeys map[string]bool) BacklightResolver {
-// 	var backlogKeys []string
-// 	for key := range backlogIssueKeys {
-// 		backlogKeys = append(backlogKeys, key)
-// 	}
-// 	debug.Debug("Backlog issues: %v", backlogKeys)
-
-// 	return func(issue *jira.Issue) *color.Color {
-// 		isInBacklog := backlogIssueKeys[issue.Key]
-// 		if isInBacklog {
-// 			color := lipgloss.Color("67") // Issue is in backlog
-// 			return &color
-// 		}
-// 		color := lipgloss.Color("62") // Issue is on board
-// 		return &color
-// 	}
-// }
-
-// createNilResolver creates a resolver that always returns nil (no custom coloring)
-// func createNilResolver() BacklightResolver {
-// 	return func(issue *jira.Issue) *color.Color {
-// 		return nil // Use default table styling
-// 	}
-// }
-
-// CreateBacklightResolver creates a background color resolver based on board configuration
-// Returns both the resolver function and a board state checker
 func CreateBoardStateResolver(client *jira.Client, boardID int, queryParams *query.IssueParams) *BoardStateResolver {
 	if boardID == 0 {
 		return nil
@@ -77,28 +58,25 @@ func CreateBoardStateResolver(client *jira.Client, boardID int, queryParams *que
 		return nil
 	}
 
-	stateResolver := &BoardStateResolver{backlogIssueKeys: backlogIssueKeys}
-
-	// colorResolver := func(issue *jira.Issue) *color.Color {
-	// 	if stateResolver.IsOnBoard(issue.Key) {
-	// 		color := lipgloss.Color("62")
-	// 		return &color
-	// 	}
-	// 	color := lipgloss.Color("67")
-	// 	return &color
-	// }
-
-	return stateResolver
+	return &BoardStateResolver{backlogIssueKeys: backlogIssueKeys}
 }
 
+type BacklogState int
+
+const (
+	Unknown = iota
+	InBacklog
+	OnBoard
+)
+
 // ToggleIssueBacklogState toggles an issue between board and backlog state using cached board state
-func ToggleIssueBacklogState(client *jira.Client, boardID int, issue *jira.Issue, stateChecker *BoardStateResolver) error {
+func ToggleIssueBacklogState(client *jira.Client, boardID int, issue *jira.Issue, stateChecker *BoardStateResolver) (BacklogState, error) {
 	if boardID == 0 {
-		return fmt.Errorf("no board ID configured for this tab")
+		return Unknown, fmt.Errorf("no board ID configured for this tab")
 	}
 
 	if stateChecker == nil {
-		return fmt.Errorf("no board state information available")
+		return Unknown, fmt.Errorf("no board state information available")
 	}
 
 	boardIDStr := fmt.Sprintf("%d", boardID)
@@ -106,21 +84,16 @@ func ToggleIssueBacklogState(client *jira.Client, boardID int, issue *jira.Issue
 
 	var err error
 	if isOnBoard {
-		// Issue is on board, move to backlog
-		debug.Debug("Issue %s is on board, moving to backlog", issue.Key)
 		err = client.MoveIssueToBacklog(boardIDStr, issue.Key)
 		if err != nil {
-			return fmt.Errorf("failed to move issue to backlog: %v", err)
+			return OnBoard, fmt.Errorf("failed to move issue to backlog: %v", err)
 		}
-		debug.Debug("Successfully moved issue %s to backlog", issue.Key)
+		return InBacklog, nil
 	} else {
-		// Issue is in backlog, move to board
-		debug.Debug("Issue %s is in backlog, moving to board", issue.Key)
 		err = client.MoveIssueToBoard(boardIDStr, issue.Key)
 		if err != nil {
-			return fmt.Errorf("failed to move issue to board: %v", err)
+			return InBacklog, fmt.Errorf("failed to move issue to board: %v", err)
 		}
-		debug.Debug("Successfully moved issue %s to board", issue.Key)
+		return OnBoard, nil
 	}
-	return nil
 }

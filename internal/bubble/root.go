@@ -313,9 +313,11 @@ func (l *IssueList) addComment(iss *jira.Issue) tea.Cmd {
 func (l *IssueList) toggleBacklogState(issue *jira.Issue) tea.Cmd {
 	return func() tea.Msg {
 		tabConfig := l.getCurrentTabConfig()
-		err := exp.ToggleIssueBacklogState(l.c, tabConfig.BoardId, issue, tabConfig.BoardStateResolver)
+		newState, err := exp.ToggleIssueBacklogState(l.c, tabConfig.BoardId, issue, tabConfig.BoardStateResolver)
 		if err != nil {
 			return IssueBacklogToggleMsg{issueKey: issue.Key, err: err, stderr: err.Error()}
+		} else {
+			tabConfig.BoardStateResolver.SetBacklogState(issue.Key, newState)
 		}
 		return IssueBacklogToggleMsg{issueKey: issue.Key, err: nil, stderr: ""}
 	}
