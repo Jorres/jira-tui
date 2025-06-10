@@ -231,6 +231,9 @@ func (t *Table) Update(msg tea.Msg) (*Table, tea.Cmd) {
 			default:
 				t.sorterText = t.sorterText + msg.String()
 				t.filterTableData(t.sorterText)
+				if len(t.filteredIssues) > 0 {
+					t.table.SetCursor(0)
+				}
 				return t, cmd
 			}
 		}

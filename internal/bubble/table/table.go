@@ -437,13 +437,13 @@ func (m *Model) renderRow(r int) string {
 			continue
 		}
 		style := lipgloss.NewStyle().Width(m.cols[i].Width).MaxWidth(m.cols[i].Width).Inline(true)
-		
+
 		// Use cell-specific style if available, but only if this row is NOT selected
 		cellStyle := m.styles.Cell
 		if r != m.cursor && r < len(m.cellStyles) && i < len(m.cellStyles[r]) && m.cellStyles[r][i].GetBackground() != lipgloss.Color("") {
 			cellStyle = m.cellStyles[r][i]
 		}
-		
+
 		renderedCell := cellStyle.Render(style.Render(runewidth.Truncate(value, m.cols[i].Width, "…")))
 		s = append(s, renderedCell)
 	}
@@ -470,14 +470,14 @@ func (m *Model) SetCellStyle(r, c int, style lipgloss.Style) {
 		}
 		m.cellStyles = newStyles
 	}
-	
+
 	if c >= len(m.cellStyles[r]) {
 		// Extend columns for this row
 		newRow := make([]lipgloss.Style, c+1)
 		copy(newRow, m.cellStyles[r])
 		m.cellStyles[r] = newRow
 	}
-	
+
 	m.cellStyles[r][c] = style
 }
 
@@ -495,7 +495,7 @@ func (m *Model) SetRowStyles(r int, styles []lipgloss.Style) {
 // GetCellStyle returns the style for a specific cell. If no custom style
 // is set, it returns the default Cell style.
 func (m Model) GetCellStyle(r, c int) lipgloss.Style {
-	if r < len(m.cellStyles) && c < len(m.cellStyles[r]) && 
+	if r < len(m.cellStyles) && c < len(m.cellStyles[r]) &&
 		m.cellStyles[r][c].GetBackground() != lipgloss.Color("") {
 		return m.cellStyles[r][c]
 	}
