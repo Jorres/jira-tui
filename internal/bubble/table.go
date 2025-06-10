@@ -2,6 +2,7 @@ package bubble
 
 import (
 	"fmt"
+	"image/color"
 	"slices"
 	"strings"
 
@@ -11,7 +12,6 @@ import (
 	"github.com/jorres/jira-tui/api"
 	forkedTable "github.com/jorres/jira-tui/internal/bubble/table"
 	"github.com/jorres/jira-tui/internal/debug"
-	"github.com/jorres/jira-tui/internal/exp"
 	"github.com/jorres/jira-tui/pkg/jira"
 	"github.com/jorres/jira-tui/pkg/jira/filter/issue"
 )
@@ -67,7 +67,7 @@ type Table struct {
 	dataProvider DataProvider
 
 	// Background color resolver function
-	backgroundColorResolver exp.BacklightResolver
+	backgroundColorResolver func(issueKey string) *color.Color
 
 	// Spinner for loading state
 	spinner spinner.Model
@@ -200,13 +200,6 @@ func (t *Table) Update(msg tea.Msg) (*Table, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
-	case *jira.Issue:
-		for i, iss := range t.allIssues {
-			if iss.Key == msg.Key {
-				t.allIssues[i] = msg
-			}
-		}
-		t.setInnerTableColumnsRows()
 	case WidgetSizeMsg:
 		t.rawWidth = msg.Width
 		t.rawHeight = msg.Height
@@ -270,7 +263,7 @@ func (t *Table) SetIssueData(issues []*jira.Issue) {
 	}
 }
 
-func (t *Table) SetBacklightResolver(resolver exp.BacklightResolver) {
+func (t *Table) SetBacklightResolver(resolver func(string) *color.Color) {
 	t.backgroundColorResolver = resolver
 }
 
@@ -331,27 +324,26 @@ func (t *Table) setInnerTableColumnsRows() {
 	t.table.SetColumns(columns)
 	t.table.SetRows(rows)
 
-	// Apply background colors if resolver is set
-	if t.backgroundColorResolver != nil && len(issues) > 0 {
-		for i, issue := range issues {
-			if i < len(rows) {
-				backgroundColor := t.backgroundColorResolver(issue)
-				if backgroundColor != nil {
-					// Apply custom background color only to the first column
-					rowStyles := make([]lipgloss.Style, len(columns))
-					for j := range rowStyles {
-						if j == 0 {
-							// Apply background color only to first column
-							rowStyles[j] = forkedTable.DefaultStyles().Cell.Background(*backgroundColor)
-						} else {
-							// Use default cell style for other columns
-							rowStyles[j] = forkedTable.DefaultStyles().Cell
-						}
-					}
-					t.table.SetRowStyles(i, rowStyles)
-				}
-				// If backgroundColor is nil, don't set any custom styles (use forked table defaults)
+	for i, issue := range issues {
+		if i < len(rows) {
+			backgroundColor := t.backgroundColorResolver(issue.Key)
+
+			if backgroundColor == nil {
+				continue
 			}
+
+			// Apply custom background color only to the first column
+			rowStyles := make([]lipgloss.Style, len(columns))
+			for j := range rowStyles {
+				if j == 0 {
+					// Apply background color only to first column
+					rowStyles[j] = forkedTable.DefaultStyles().Cell.Background(*backgroundColor)
+				} else {
+					// Use default cell style for other columns
+					rowStyles[j] = forkedTable.DefaultStyles().Cell
+				}
+			}
+			t.table.SetRowStyles(i, rowStyles)
 		}
 	}
 }
@@ -539,18 +531,6 @@ func (t *Table) getKeyUnderCursorWithShift(shift int) string {
 	return issuePool[pos].Key
 }
 
-func (t *Table) GetIssueSyncNoCache(shift int) *jira.Issue {
-	key := t.getKeyUnderCursorWithShift(shift)
-
-	iss, err := api.ProxyGetIssue(api.DefaultClient(false), key, issue.NewNumCommentsFilter(10))
-	if err != nil {
-		panic(err)
-	}
-
-	t.issueCache[key] = iss
-	return iss
-}
-
 func (t *Table) GetIssueSync(shift int) *jira.Issue {
 	key := t.getKeyUnderCursorWithShift(shift)
 
@@ -558,13 +538,12 @@ func (t *Table) GetIssueSync(shift int) *jira.Issue {
 		return iss
 	}
 
-	return t.GetIssueSyncNoCache(shift)
-}
+	iss, err := api.ProxyGetIssue(api.DefaultClient(false), key, issue.NewNumCommentsFilter(10))
+	if err != nil {
+		panic(err)
+	}
 
-func (t *Table) GetIssueSyncAndForget(shift int) *jira.Issue {
-	iss := t.GetIssueSync(shift)
-
-	delete(t.issueCache, iss.Key)
+	t.issueCache[key] = iss
 
 	return iss
 }
@@ -632,9 +611,4 @@ func (t *Table) ScheduleIssueUpdateMessage(shift int) tea.Cmd {
 			Pos:   pos,
 		}
 	}
-}
-
-func (t *Table) RefreshCache(issues []*jira.Issue) {
-	t.allIssues = issues
-	t.issueCache = make(map[string]*jira.Issue)
 }

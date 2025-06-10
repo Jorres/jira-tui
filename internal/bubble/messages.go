@@ -60,7 +60,7 @@ type FuzzySelectorResultMsg struct {
 type IncomingIssueListMsg struct {
 	issues   []*jira.Issue
 	index    int
-	resolver exp.BacklightResolver
+	resolver *exp.BoardStateResolver
 }
 
 type IncomingIssueMsg struct {
