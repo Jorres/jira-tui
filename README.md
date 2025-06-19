@@ -2,7 +2,7 @@
 
 Jira TUI is a feature rich TUI that allows to (almost) never use the Jira browser client. What you can look forward to?
 
-![Demo](./demo.gif)
+![Demo](./demo.mp4)
 
 > [!WARNING]
 > This is an early version for early adopters. README will be eventually expanded to a short wiki.
