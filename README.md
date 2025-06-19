@@ -1,34 +1,42 @@
-## Jira TUI
+# Jira TUI
 
-Jira TUI is a feature rich TUI that allows to (almost) never use the Jira browser client. What you can look forward to?
+**A feature-rich terminal interface for Jira that lets you (almost) never use the browser client.**
 
-![Demo](./demo.mp4)
+> [!NOTE]
+> This tool is feature-complete but documentation is still growing. The README will be expanded into a comprehensive guide.
+
+![Demo](./demo.gif)
 
 > [!WARNING]
-> This is an early version for early adopters. README will be eventually expanded to a short wiki.
+> Currently documented for **Jira Cloud** only. On-premise Jira documentation coming soon.
 
-- creating editing issues with all supported jira features (mentioning people, adding attachments)
-- creating \ editing comments
-- pinging your colleagues through @<email> syntax
-- assigning people to issues
-- assigning issues to epics
-- searching by issue name \ issue key
-- ... all that in interactive TUI view, OR in regular CLI fasion (`jira --help`)
+## Features
 
-## Quick getting started
+- **Create & edit issues** with full Jira features (mentions, attachments)
+- **Manage comments** with rich text support
+- **Mention colleagues** using `@email` syntax
+- **Assign issues** to team members
+- **Link issues to epics** and manage hierarchies
+- **Search** by issue name or key
+- **Dual interface**: Interactive TUI or traditional CLI (`jira --help`)
 
-1. [Get a Jira API token](https://id.atlassian.com/manage-profile/security/api-tokens) and export it to your shell as
-   a `JIRA_API_TOKEN` variable.
-2. Run `jira init`, select installation type as `Cloud`, and provide required details to generate a config file required
-   for the tool.
-3. Run `jira ui` and enjoy. Press '?' for help.
+## Quick Start
 
-## Customizing the view
+1. **Download** a pre-built binary from [releases](https://github.com/Jorres/jira-tui/releases)
+2. **Get your API token**: [Generate a Jira API token](https://id.atlassian.com/manage-profile/security/api-tokens) and export it:
+   ```bash
+   export JIRA_API_TOKEN="your-token-here"
+   ```
+3. **Initialize**: Run `jira init`, select `Cloud`, and provide your Jira details
+4. **Launch**: Run `jira ui` and press `?` for help
 
-You can create multiple tabs as in the preview, and each tabs can fetch its own issues and filter them with its own predicates. To do that, add a `ui` top-level field to
-the config.
+## Customization
 
-Here is a simple example with two tabs, looking into EXAMPLE_DEV and EXAMPLE_OPS projects. EXAMPLE_DEV applies some filtering, EXAMPLE_OPS does not.
+Create multiple tabs with custom filters and views. Each tab can fetch different issues with its own predicates. Add a `ui` section to your config file:
+
+### Multi-Tab Example
+
+Here's a configuration with two tabs - one filtered (EXAMPLE_DEV) and one unfiltered (EXAMPLE_OPS):
 
 ```yaml
 ui:
@@ -65,23 +73,27 @@ ui:
         ...
 ```
 
-5. Optionally, you can recolor the interface by adding `theme` key with `accent` and `pale` colors. Accent color is everything that's violet,
-   pale color mainly stands for pale gray borders. Colors will be accepted either as `#AABBCC` or from 0 to 255, as per [8 bits ANSI colors](https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit) Try a couple:
+### Theming
 
-   This is how to set a default theme:
+Customize colors using the `theme` section. Colors can be hex codes (`#AABBCC`) or [8-bit ANSI values](https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit) (0-255):
 
-   ```yaml
-   ui:
-     theme:
-       accent: "62"
-       pale: "240"
-   ```
+- **accent**: Highlight color (default violet elements)
+- **pale**: Border and secondary elements color
 
-   And this is how to override:
+**Default theme:**
 
-   ```yaml
-   ui:
-     theme:
-       accent: "#859900"
-       pale: "240"
-   ```
+```yaml
+ui:
+  theme:
+    accent: "62" # Purple highlight
+    pale: "240" # Gray borders
+```
+
+**Custom theme example:**
+
+```yaml
+ui:
+  theme:
+    accent: "#859900" # Solarized green
+    pale: "240"
+```
