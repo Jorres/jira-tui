@@ -375,7 +375,7 @@ func (l *IssueList) assignToEpic(epicKey string, issue *jira.Issue) tea.Cmd {
 	)
 
 	return execCommandWithStderr(args, func(err error, stderr string) tea.Msg {
-		return IssueAssignedToEpicMsg{err: err, stderr: stderr}
+		return IssueAssignedToEpicMsg{issueKey: issue.Key, err: err, stderr: stderr}
 	})
 }
 

@@ -13,9 +13,9 @@ func Debug(v ...any) {
 		return
 	}
 
-	dir := filepath.Join(home, "hobbies", "jira-coalition", "jira-tui")
-	info, err := os.Stat(dir)
-	if err != nil || !info.IsDir() {
+	dir := filepath.Join(home, ".jira-tui")
+	err = os.MkdirAll(dir, 0o755)
+	if err != nil {
 		return
 	}
 
