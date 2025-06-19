@@ -5,7 +5,12 @@
 > [!NOTE]
 > This tool is feature-complete but documentation is still growing. The README will be expanded into a comprehensive guide.
 
-![Demo](./demo.gif)
+
+
+https://github.com/user-attachments/assets/f0acecb1-085e-4e03-9bb9-136b79d019af
+
+
+
 
 > [!WARNING]
 > Currently documented for **Jira Cloud** only. On-premise Jira documentation coming soon.
