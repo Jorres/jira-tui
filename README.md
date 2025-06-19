@@ -13,17 +13,17 @@
 ## Features
 
 - **Create & edit issues** with full Jira features (mentions, attachments)
-- **Manage comments** with rich text support
+- **Create & edit comments** with rich text support
 - **Mention colleagues** using `@email` syntax
 - **Assign issues** to team members
-- **Link issues to epics** and manage hierarchies
+- **Link issues to epics**
 - **Search** by issue name or key
-- **Dual interface**: Interactive TUI or traditional CLI (`jira --help`)
+- **Dual interface**: Interactive TUI or traditional CLI (full docs for CLI are coming soon, for now `jira --help`)
 
 ## Quick Start
 
 1. **Download** a pre-built binary from [releases](https://github.com/Jorres/jira-tui/releases)
-2. **Get your API token**: [Generate a Jira API token](https://id.atlassian.com/manage-profile/security/api-tokens) and export it:
+2. **Get an API token from your Jira installation**: [Atlassian guide](https://id.atlassian.com/manage-profile/security/api-tokens) and export it:
    ```bash
    export JIRA_API_TOKEN="your-token-here"
    ```
