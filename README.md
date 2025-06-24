@@ -5,24 +5,19 @@
 > [!NOTE]
 > This tool is feature-complete but documentation is still growing. The README will be expanded into a comprehensive guide.
 
-
-
 https://github.com/user-attachments/assets/f0acecb1-085e-4e03-9bb9-136b79d019af
-
-
-
 
 > [!WARNING]
 > Currently documented for **Jira Cloud** only. On-premise Jira documentation coming soon.
 
 ## Features
 
-- **Create & edit issues** with full Jira features (mentions, attachments)
-- **Create & edit comments** with rich text support
+- **Edit an entire** issue (with comments!) like it's one markdown doc
 - **Mention colleagues** using `@email` syntax
 - **Assign issues** to team members
 - **Link issues to epics**
 - **Search** by issue name or key
+- **Move** issues between board \ backlog in a press of a button
 - **Dual interface**: Interactive TUI or traditional CLI (full docs for CLI are coming soon, for now `jira --help`)
 
 ## Quick Start

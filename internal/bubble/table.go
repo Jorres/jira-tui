@@ -2,16 +2,16 @@ package bubble
 
 import (
 	"fmt"
-	"image/color"
 	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/spinner"
+	"github.com/charmbracelet/bubbles/v2/table"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/jorres/jira-tui/api"
-	forkedTable "github.com/jorres/jira-tui/internal/bubble/table"
 	"github.com/jorres/jira-tui/internal/debug"
+	"github.com/jorres/jira-tui/internal/exp"
 	"github.com/jorres/jira-tui/pkg/jira"
 	"github.com/jorres/jira-tui/pkg/jira/filter/issue"
 )
@@ -33,7 +33,7 @@ type TableData [][]string
 
 // Table is a bubble tea model for rendering tables.
 type Table struct {
-	table       forkedTable.Model
+	table       table.Model
 	footerText  string
 	helpText    string
 	showHelp    bool
@@ -66,8 +66,8 @@ type Table struct {
 	// Data provider for getting table data
 	dataProvider DataProvider
 
-	// Background color resolver function
-	backgroundColorResolver func(issueKey string) *color.Color
+	// Board state resolver for determining if issues are on board or backlog
+	boardStateResolver *exp.BoardStateResolver
 
 	// Spinner for loading state
 	spinner spinner.Model
@@ -110,12 +110,12 @@ func NewTable(opts ...TableOption) *Table {
 		spinner:      s,
 	}
 
-	t.table = forkedTable.New(
-		forkedTable.WithFocused(true),
+	t.table = table.New(
+		table.WithFocused(true),
 	)
 
 	// Set up table styles
-	st := forkedTable.DefaultStyles()
+	st := table.DefaultStyles()
 	st.Header = st.Header.
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color(getPaleColor())).
@@ -266,8 +266,8 @@ func (t *Table) SetIssueData(issues []*jira.Issue) {
 	}
 }
 
-func (t *Table) SetBacklightResolver(resolver func(string) *color.Color) {
-	t.backgroundColorResolver = resolver
+func (t *Table) SetBoardStateResolver(resolver *exp.BoardStateResolver) {
+	t.boardStateResolver = resolver
 }
 
 // GetIssueData returns the current issue data
@@ -297,27 +297,24 @@ func (t *Table) SetDataProvider(provider DataProvider) {
 
 func (t *Table) setInnerTableColumnsRows() {
 	var data TableData
-	var issues []*jira.Issue
 	if t.SorterState == SorterInactive {
 		data = t.makeTableData(t.allIssues)
-		issues = t.allIssues
 	} else {
 		data = t.makeTableData(t.filteredIssues)
-		issues = t.filteredIssues
 	}
 
-	columns := make([]forkedTable.Column, len(data[0]))
+	columns := make([]table.Column, len(data[0]))
 	for i, col := range data[0] {
 		oneWidth := t.columnWidth(col, data)
-		columns[i] = forkedTable.Column{
+		columns[i] = table.Column{
 			Title: col,
 			Width: oneWidth,
 		}
 	}
 
-	rows := make([]forkedTable.Row, len(data)-1)
+	rows := make([]table.Row, len(data)-1)
 	for i := 1; i < len(data); i++ {
-		row := make(forkedTable.Row, len(data[i]))
+		row := make(table.Row, len(data[i]))
 		for j, cell := range data[i] {
 			row[j] = cell
 		}
@@ -326,29 +323,6 @@ func (t *Table) setInnerTableColumnsRows() {
 
 	t.table.SetColumns(columns)
 	t.table.SetRows(rows)
-
-	for i, issue := range issues {
-		if i < len(rows) {
-			backgroundColor := t.backgroundColorResolver(issue.Key)
-
-			if backgroundColor == nil {
-				continue
-			}
-
-			// Apply custom background color only to the first column
-			rowStyles := make([]lipgloss.Style, len(columns))
-			for j := range rowStyles {
-				if j == 0 {
-					// Apply background color only to first column
-					rowStyles[j] = forkedTable.DefaultStyles().Cell.Background(*backgroundColor)
-				} else {
-					// Use default cell style for other columns
-					rowStyles[j] = forkedTable.DefaultStyles().Cell
-				}
-			}
-			t.table.SetRowStyles(i, rowStyles)
-		}
-	}
 }
 
 // View renders the table.
@@ -510,6 +484,12 @@ func (t *Table) assignColumns(columns []string, issue *jira.Issue) []string {
 			bucket = append(bucket, FormatDateTime(issue.Fields.Updated, jira.RFC3339, t.timezone))
 		case FieldLabels:
 			bucket = append(bucket, strings.Join(issue.Fields.Labels, ","))
+		case FieldIsOnBoard:
+			if t.boardStateResolver != nil && t.boardStateResolver.IsOnBoard(issue.Key) {
+				bucket = append(bucket, "Yes")
+			} else {
+				bucket = append(bucket, "No")
+			}
 		}
 	}
 	return bucket

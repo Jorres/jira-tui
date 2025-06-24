@@ -13,6 +13,7 @@ const (
 	FieldCreated    = "CREATED"
 	FieldUpdated    = "UPDATED"
 	FieldLabels     = "LABELS"
+	FieldIsOnBoard  = "IS ON BOARD"
 )
 
 // ValidIssueColumns returns the list of valid column names for help text
@@ -20,6 +21,6 @@ func ValidIssueColumns() []string {
 	return []string{
 		FieldType, FieldParent, FieldKey, FieldSummary, FieldStatus,
 		FieldAssignee, FieldReporter, FieldPriority, FieldResolution,
-		FieldCreated, FieldUpdated, FieldLabels,
+		FieldCreated, FieldUpdated, FieldLabels, FieldIsOnBoard,
 	}
 }

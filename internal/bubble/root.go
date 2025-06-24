@@ -3,7 +3,6 @@ package bubble
 import (
 	"bytes"
 	"fmt"
-	"image/color"
 	"os"
 	"os/exec"
 	"strings"
@@ -42,6 +41,7 @@ func getDefaultIssueColumns() []string {
 		FieldResolution,
 		FieldUpdated,
 		FieldLabels,
+		FieldIsOnBoard,
 	}
 }
 
@@ -453,19 +453,7 @@ func (l *IssueList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		thisTable := l.tables[msg.index]
 
 		thisTable.SetIssueData(msg.issues)
-		thisTable.SetBacklightResolver(func(issueKey string) *color.Color {
-			if msg.resolver == nil {
-				return nil
-			}
-
-			if msg.resolver.IsOnBoard(issueKey) {
-				color := lipgloss.Color(viper.GetString("ui.theme.onBoard"))
-				return &color
-			}
-
-			color := lipgloss.Color(viper.GetString("ui.theme.onBacklog"))
-			return &color
-		})
+		thisTable.SetBoardStateResolver(msg.resolver)
 
 		if len(msg.issues) > 0 {
 			cmd = thisTable.GetIssueAsync(msg.index, 0)

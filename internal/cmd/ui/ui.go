@@ -143,7 +143,7 @@ func MakeFetcherFromTabConfig(project string, baseFlags query.FlagParser, tabCon
 			params.OrderBy = "created"
 		}
 		if params.Limit == 0 {
-			params.Limit = 100
+			params.Limit = 300
 		}
 
 		q := &query.Issue{
@@ -170,6 +170,7 @@ func MakeFetcherFromTabConfig(project string, baseFlags query.FlagParser, tabCon
 func MakeFetcherFromQuery(q *query.Issue, debug bool) func() ([]*jira.Issue, int) {
 	return func() ([]*jira.Issue, int) {
 		issues, total, err := func() ([]*jira.Issue, int, error) {
+			D.Debug("limit", q.Params().Limit)
 			resp, err := api.ProxySearch(api.DefaultClient(debug), q.Get(), q.Params().From, q.Params().Limit)
 			if err != nil {
 				return nil, 0, err
